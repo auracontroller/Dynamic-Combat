@@ -109,40 +109,42 @@ namespace DynamicCombat
                     // Passive Containment Override
                     float distanceToTarget = attacker.Position.Distance(target.Position);
 
-                    // Maintain elastic boundary
-                    if (distanceToTarget < minDistance)
+                    // If the attacker is outside the maximum distance, do not micromanage them.
+                    // This allows standard formation AI and pathfinding to work naturally
+                    // until they approach the engagement zone.
+                    if (distanceToTarget > maxDistance)
                     {
-                        // Step back
-                        Vec2 diff = attacker.Position.AsVec2 - target.Position.AsVec2;
-                        Vec2 dirAway = diff.LengthSquared < 0.0001f ? new Vec2(1, 0) : diff.Normalized();
-                        Vec2 idealPos = target.Position.AsVec2 + (dirAway * minDistance);
-                        WorldPosition retreatPos = new WorldPosition(Mission.Current.Scene, UIntPtr.Zero, new Vec3(idealPos.x, idealPos.y, attacker.Position.z), false);
-                        attacker.SetScriptedPosition(ref retreatPos, false, Agent.AIScriptedFrameFlags.None);
-                    }
-                    else if (distanceToTarget > maxDistance)
-                    {
-                        // Step forward to contract
-                        Vec2 diff = target.Position.AsVec2 - attacker.Position.AsVec2;
-                        Vec2 dirToward = diff.LengthSquared < 0.0001f ? new Vec2(1, 0) : diff.Normalized();
-                        Vec2 idealPos = attacker.Position.AsVec2 + (dirToward * (distanceToTarget - maxDistance));
-                        WorldPosition advancePos = new WorldPosition(Mission.Current.Scene, UIntPtr.Zero, new Vec3(idealPos.x, idealPos.y, attacker.Position.z), false);
-                        attacker.SetScriptedPosition(ref advancePos, false, Agent.AIScriptedFrameFlags.None);
+                        attacker.DisableScriptedMovement();
+                        attacker.SetMaximumSpeedLimit(-1f, false);
                     }
                     else
                     {
-                        // Inside the dead-zone, zero-movement. Let them stop.
-                        attacker.DisableScriptedMovement();
-                        attacker.SetMaximumSpeedLimit(0f, false); // Try to force them to stop walking towards the target
-
-                        // Shield block if possible
-                        if (HasShield(attacker))
+                        // Maintain elastic boundary inside the max radius
+                        if (distanceToTarget < minDistance)
                         {
-                            // attacker.SetDefendAction(1); // 1 = Defend down/forward usually, might need to use specific action
+                            // Step back
+                            Vec2 diff = attacker.Position.AsVec2 - target.Position.AsVec2;
+                            Vec2 dirAway = diff.LengthSquared < 0.0001f ? new Vec2(1, 0) : diff.Normalized();
+                            Vec2 idealPos = target.Position.AsVec2 + (dirAway * minDistance);
+                            WorldPosition retreatPos = new WorldPosition(Mission.Current.Scene, UIntPtr.Zero, new Vec3(idealPos.x, idealPos.y, attacker.Position.z), false);
+                            attacker.SetScriptedPosition(ref retreatPos, false, Agent.AIScriptedFrameFlags.None);
                         }
-                    }
+                        else
+                        {
+                            // Inside the dead-zone, zero-movement. Let them stop.
+                            attacker.DisableScriptedMovement();
+                            attacker.SetMaximumSpeedLimit(0f, false); // Try to force them to stop walking towards the target
 
-                    // Suppress attack
-                    attacker.SetActionChannel(1, ActionIndexCache.act_none, false, 0, 0, 0, 0, 0, 0, false, 0, 0, true);
+                            // Shield block if possible
+                            if (HasShield(attacker))
+                            {
+                                // attacker.SetDefendAction(1); // 1 = Defend down/forward usually, might need to use specific action
+                            }
+                        }
+
+                        // Suppress attack
+                        attacker.SetActionChannel(1, ActionIndexCache.act_none, false, 0, 0, 0, 0, 0, 0, false, 0, 0, true);
+                    }
                 }
                 else
                 {

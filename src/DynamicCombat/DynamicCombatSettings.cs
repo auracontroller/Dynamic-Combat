@@ -19,7 +19,7 @@ namespace DynamicCombat
         [SettingPropertyGroup("Engagement Settings")]
         public float MinDistance { get; set; } = 1.5f;
 
-        [SettingPropertyFloatingInteger("Max Engagement Distance", 1.0f, 10.0f, "0.00", Order = 3, RequireRestart = false, HintText = "Outer boundary threshold. Enemies will advance if the target gets farther than this.")]
+        [SettingPropertyFloatingInteger("Max Engagement Distance", 1.0f, 20.0f, "0.00", Order = 3, RequireRestart = false, HintText = "Outer boundary threshold. Enemies will advance if the target gets farther than this.")]
         [SettingPropertyGroup("Engagement Settings")]
         public float MaxDistance { get; set; } = 3.5f;
 
