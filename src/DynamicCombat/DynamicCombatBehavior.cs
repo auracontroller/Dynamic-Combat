@@ -2,6 +2,7 @@ using System;
 using TaleWorlds.Core;
 using TaleWorlds.Library;
 using TaleWorlds.MountAndBlade;
+using TaleWorlds.Engine;
 
 namespace DynamicCombat
 {
@@ -86,12 +87,12 @@ namespace DynamicCombat
                     {
                         // Cavalry orbit behavior
                         float orbitDistance = maxDistance + 1.0f; // 1 meter outside max distance
-                        Vector2 targetPos = target.Position.AsVec2;
+                        Vec2 targetPos = target.Position.AsVec2;
 
                         // Pick a position to orbit. We can approximate an orbit by picking a point offset by the orbit distance
                         // and rotating it based on time.
                         float angle = (Mission.Current.CurrentTime * 0.5f) % (2 * (float)Math.PI);
-                        Vector2 orbitPos = targetPos + new Vector2((float)Math.Cos(angle) * orbitDistance, (float)Math.Sin(angle) * orbitDistance);
+                        Vec2 orbitPos = targetPos + new Vec2((float)Math.Cos(angle) * orbitDistance, (float)Math.Sin(angle) * orbitDistance);
 
                         WorldPosition orbitWorldPos = new WorldPosition(Mission.Current.Scene, UIntPtr.Zero, new Vec3(orbitPos.x, orbitPos.y, target.Position.z), false);
                         attacker.SetScriptedPosition(ref orbitWorldPos, false, Agent.AIScriptedFrameFlags.None);
@@ -112,16 +113,16 @@ namespace DynamicCombat
                     if (distanceToTarget < minDistance)
                     {
                         // Step back
-                        Vector2 dirAway = (attacker.Position.AsVec2 - target.Position.AsVec2).Normalized();
-                        Vector2 idealPos = target.Position.AsVec2 + (dirAway * minDistance);
+                        Vec2 dirAway = (attacker.Position.AsVec2 - target.Position.AsVec2).Normalized();
+                        Vec2 idealPos = target.Position.AsVec2 + (dirAway * minDistance);
                         WorldPosition retreatPos = new WorldPosition(Mission.Current.Scene, UIntPtr.Zero, new Vec3(idealPos.x, idealPos.y, target.Position.z), false);
                         attacker.SetScriptedPosition(ref retreatPos, false, Agent.AIScriptedFrameFlags.None);
                     }
                     else if (distanceToTarget > maxDistance)
                     {
                         // Step forward to contract
-                        Vector2 dirToward = (target.Position.AsVec2 - attacker.Position.AsVec2).Normalized();
-                        Vector2 idealPos = attacker.Position.AsVec2 + (dirToward * (distanceToTarget - maxDistance));
+                        Vec2 dirToward = (target.Position.AsVec2 - attacker.Position.AsVec2).Normalized();
+                        Vec2 idealPos = attacker.Position.AsVec2 + (dirToward * (distanceToTarget - maxDistance));
                         WorldPosition advancePos = new WorldPosition(Mission.Current.Scene, UIntPtr.Zero, new Vec3(idealPos.x, idealPos.y, target.Position.z), false);
                         attacker.SetScriptedPosition(ref advancePos, false, Agent.AIScriptedFrameFlags.None);
                     }
@@ -134,7 +135,7 @@ namespace DynamicCombat
                         // Shield block if possible
                         if (HasShield(attacker))
                         {
-                            attacker.SetDefendAction(1); // 1 = Defend down/forward usually, might need to use specific action
+                        //    attacker.SetDefendAction(1); // 1 = Defend down/forward usually, might need to use specific action
                         }
                     }
 

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using TaleWorlds.MountAndBlade;
 using TaleWorlds.Library;
+using TaleWorlds.Engine;
 
 namespace DynamicCombat
 {
@@ -258,12 +259,12 @@ namespace DynamicCombat
         // Shared utility to determine if attacker is in rear quadrant
         public static bool IsInRearQuadrant(Agent attacker, Agent target, float rearAngleDegrees)
         {
-            Vector2 targetLookDirection = target.LookDirection.AsVec2.Normalized();
-            Vector2 toAttackerDirection = (attacker.Position.AsVec2 - target.Position.AsVec2).Normalized();
+            Vec2 targetLookDirection = target.LookDirection.AsVec2.Normalized();
+            Vec2 toAttackerDirection = (attacker.Position.AsVec2 - target.Position.AsVec2).Normalized();
 
             float dotProduct = Vec2.DotProduct(targetLookDirection, toAttackerDirection);
 
-            float angleRadians = (float)Math.Acos(Math.Clamp(dotProduct, -1f, 1f));
+            float angleRadians = (float)Math.Acos(MBMath.ClampFloat(dotProduct, -1f, 1f));
             float angleDegrees = angleRadians * (180f / (float)Math.PI);
 
             float threshold = 180f - (rearAngleDegrees / 2f);
