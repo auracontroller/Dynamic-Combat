@@ -2,6 +2,7 @@ using System;
 using TaleWorlds.Core;
 using TaleWorlds.Library;
 using TaleWorlds.MountAndBlade;
+using TaleWorlds.Engine;
 
 namespace DynamicCombat
 {
@@ -136,7 +137,7 @@ namespace DynamicCombat
                         // Shield block if possible
                         if (HasShield(attacker))
                         {
-                            attacker.SetDefendAction(1); // 1 = Defend down/forward usually, might need to use specific action
+                            // attacker.SetDefendAction(1); // 1 = Defend down/forward usually, might need to use specific action
                         }
                     }
 
