@@ -223,6 +223,16 @@ namespace DynamicCombat
             }
         }
 
+        public void PrintTelemetry()
+        {
+            int totalActive = 0;
+            int totalQueued = 0;
+            foreach (var kvp in _activeEngagements) totalActive += kvp.Value.Count;
+            foreach (var kvp in _queuedAttackers) totalQueued += kvp.Value.Count;
+
+            TaleWorlds.Library.Debug.Print($"[DynamicCombat] Active Slots: {totalActive} | Queued: {totalQueued}");
+        }
+
         public void UpdateSlots()
         {
             var settings = DynamicCombatSettings.Instance;

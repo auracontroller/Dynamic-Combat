@@ -20,11 +20,14 @@ namespace DynamicCombat
             _tickTimer += dt;
             if (_tickTimer >= UpdateInterval)
             {
-                float passedTime = _tickTimer;
                 _tickTimer = 0f;
                 CombatRegistry.Instance.UpdateSlots();
-                UpdateAgents(passedTime);
+                CombatRegistry.Instance.PrintTelemetry();
             }
+
+            // Concurrency Shield: Update agent micro-management every single frame
+            // to suppress vanilla AI from bleeding through and overriding our limits.
+            UpdateAgents(dt);
         }
 
         private void UpdateAgents(float dt)
@@ -252,6 +255,12 @@ namespace DynamicCombat
         {
             base.OnAgentDeleted(agent);
             CombatRegistry.Instance.RemoveAttacker(agent);
+        }
+
+        public override void OnRemoveBehavior()
+        {
+            base.OnRemoveBehavior();
+            CombatRegistry.Instance.Clear();
         }
 
         protected override void OnEndMission()
