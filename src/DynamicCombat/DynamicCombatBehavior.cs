@@ -119,6 +119,14 @@ namespace DynamicCombat
                     }
                     else
                     {
+                        // Force agent to face the enemy when inside max radius
+                        Vec3 toTargetLookDir = target.Position - attacker.Position;
+                        if (toTargetLookDir.LengthSquared > 0.0001f)
+                        {
+                            toTargetLookDir.Normalize();
+                            attacker.SetLookDirection(toTargetLookDir);
+                        }
+
                         // Maintain elastic boundary inside the max radius
                         if (distanceToTarget < minDistance)
                         {
