@@ -13,6 +13,9 @@ namespace DynamicCombat
         private float _tickTimer = 0f;
         private const float UpdateInterval = 0.25f; // Update every 250ms to save performance
 
+        private static readonly ActionIndexCache DefendActionCache = ActionIndexCache.Create("act_defend_shield_up_forward");
+        private static readonly ActionIndexCache NoneActionCache = ActionIndexCache.act_none;
+
         public override void OnMissionTick(float dt)
         {
             base.OnMissionTick(dt);
@@ -199,15 +202,22 @@ namespace DynamicCombat
 
                         // Force the agent to block/defend while waiting in the queue
                         // We use ActionIndexCache.act_defend_shield_up_forward to trigger the defense state if they have a shield
+                        ActionIndexValueCache currentAction = attacker.GetCurrentActionValue(1);
                         if (HasShield(attacker))
                         {
-                            attacker.SetActionChannel(1, ActionIndexCache.Create("act_defend_shield_up_forward"), false, 0, 0, 1f, 0f, 0.5f, 0f, false, -0.2f, 0, true);
+                            if (currentAction != DefendActionCache)
+                            {
+                                attacker.SetActionChannel(1, DefendActionCache, false, 0, 0, 1f, 0f, 0.5f, 0f, false, -0.2f, 0, true);
+                            }
                             attacker.EnforceShieldUsage(Agent.UsageDirection.DefendDown);
                         }
                         else
                         {
                             // Without a shield, simply suppress their attack
-                            attacker.SetActionChannel(1, ActionIndexCache.act_none, false, 0, 0, 0, 0, 0, 0, false, 0, 0, true);
+                            if (currentAction != NoneActionCache)
+                            {
+                                attacker.SetActionChannel(1, NoneActionCache, false, 0, 0, 0, 0, 0, 0, false, 0, 0, true);
+                            }
                         }
                     }
                 }
