@@ -27,16 +27,98 @@ namespace DynamicCombat
         // Track what target each attacker is currently assigned to, to easily clean up when they switch targets.
         private Dictionary<Agent, Agent> _attackerCurrentTarget = new Dictionary<Agent, Agent>(512);
 
+        // Blacklisted targets for an attacker and the expiration time
+        private Dictionary<Agent, Dictionary<Agent, float>> _blacklistedTargets = new Dictionary<Agent, Dictionary<Agent, float>>(512);
+
+        // Timer for how long an agent has been in the queue
+        private Dictionary<Agent, float> _queueTimers = new Dictionary<Agent, float>(512);
+
+        // Track agent health to detect damage interrupts
+        private Dictionary<Agent, float> _agentHealths = new Dictionary<Agent, float>(512);
+
         public void Clear()
         {
             _activeEngagements.Clear();
             _queuedAttackers.Clear();
             _attackerCurrentTarget.Clear();
+            _blacklistedTargets.Clear();
+            _queueTimers.Clear();
+            _agentHealths.Clear();
+        }
+
+        public void BlacklistTarget(Agent attacker, Agent target, float currentTime, float durationSeconds)
+        {
+            if (attacker == null || target == null) return;
+            if (!_blacklistedTargets.TryGetValue(attacker, out var blacklist))
+            {
+                blacklist = new Dictionary<Agent, float>();
+                _blacklistedTargets[attacker] = blacklist;
+            }
+            blacklist[target] = currentTime + durationSeconds;
+        }
+
+        public bool IsBlacklisted(Agent attacker, Agent target, float currentTime)
+        {
+            if (attacker == null || target == null) return false;
+            if (_blacklistedTargets.TryGetValue(attacker, out var blacklist))
+            {
+                if (blacklist.TryGetValue(target, out float expirationTime))
+                {
+                    if (currentTime < expirationTime) return true;
+                    // Expired
+                    blacklist.Remove(target);
+                }
+            }
+            return false;
+        }
+
+        public bool DidTakeDamage(Agent attacker)
+        {
+            if (attacker == null || !attacker.IsActive()) return false;
+            float currentHealth = attacker.Health;
+            if (_agentHealths.TryGetValue(attacker, out float previousHealth))
+            {
+                if (currentHealth < previousHealth)
+                {
+                    _agentHealths[attacker] = currentHealth;
+                    return true;
+                }
+            }
+            _agentHealths[attacker] = currentHealth;
+            return false;
+        }
+
+        public void IncrementQueueTimer(Agent attacker, float dt)
+        {
+            if (attacker == null) return;
+            if (_queueTimers.TryGetValue(attacker, out float timer))
+            {
+                _queueTimers[attacker] = timer + dt;
+            }
+            else
+            {
+                _queueTimers[attacker] = dt;
+            }
+        }
+
+        public float GetQueueTimer(Agent attacker)
+        {
+            if (attacker == null) return 0f;
+            return _queueTimers.TryGetValue(attacker, out float timer) ? timer : 0f;
+        }
+
+        public void ResetQueueTimer(Agent attacker)
+        {
+            if (attacker == null) return;
+            _queueTimers.Remove(attacker);
         }
 
         public bool TryRegisterAttacker(Agent attacker, Agent target)
         {
             if (attacker == null || target == null || !attacker.IsActive() || !target.IsActive())
+                return false;
+
+            if (IsBlacklisted(attacker, target, Mission.Current.CurrentTime))
                 return false;
 
             var settings = DynamicCombatSettings.Instance;
@@ -107,13 +189,49 @@ namespace DynamicCombat
             }
         }
 
+        public void DemoteToQueue(Agent attacker, Agent target, float currentTime)
+        {
+            if (attacker == null || target == null) return;
+
+            var settings = DynamicCombatSettings.Instance;
+            int maxQueue = settings?.MaxQueueSlots ?? 3;
+
+            if (_activeEngagements.TryGetValue(target, out var activeList))
+            {
+                activeList.Remove(attacker);
+            }
+
+            if (!_queuedAttackers.TryGetValue(target, out var targetQueue))
+            {
+                targetQueue = new List<Agent>(8);
+                _queuedAttackers[target] = targetQueue;
+            }
+
+            if (!targetQueue.Contains(attacker))
+            {
+                if (targetQueue.Count >= maxQueue)
+                {
+                    // Target queue is full. Evict entirely. Blacklist for 2 seconds and find new target.
+                    BlacklistTarget(attacker, target, currentTime, 2.0f);
+                    RemoveAttacker(attacker);
+                }
+                else
+                {
+                    targetQueue.Add(attacker);
+                    ResetQueueTimer(attacker); // Start queue timer
+                }
+            }
+        }
+
         public void UpdateSlots()
         {
             var settings = DynamicCombatSettings.Instance;
             if (settings == null) return;
 
             int maxSlots = settings.MaxAttackSlots;
+            int maxQueue = settings.MaxQueueSlots;
             float rearAngle = settings.RearAngle;
+            float currentTime = Mission.Current.CurrentTime;
 
             // Pre-allocate list to avoid garbage collection hit every 250ms
             List<Agent> targetsToProcess = new List<Agent>(_activeEngagements.Keys);
@@ -203,7 +321,8 @@ namespace DynamicCombat
                     }
                 }
 
-                // Demote if over max slots
+                // Active Over-Capacity Audit: Demote if over max slots
+                // Specifically evicting the furthest (or last-added, we use furthest as a proxy for least committed)
                 while (activeList.Count > maxSlots)
                 {
                     Agent furthestCandidate = null;
@@ -223,8 +342,14 @@ namespace DynamicCombat
 
                     if (furthestCandidate != null)
                     {
-                        activeList.RemoveAt(candidateIndex);
-                        queueList.Add(furthestCandidate);
+                        // Safely demote, which applies the max queue logic and blacklists if full
+                        DemoteToQueue(furthestCandidate, target, currentTime);
+                        // Have to adjust loop because activeList was modified directly
+                        break;
+                    }
+                    else
+                    {
+                        break;
                     }
                 }
             }
@@ -251,8 +376,9 @@ namespace DynamicCombat
             return (activeCount + queueCount) > 10;
         }
 
-        // Finds the closest valid enemy target that has open slots (either active or queue)
-        public Agent FindAlternativeTarget(Agent attacker)
+        // Finds the closest valid enemy target that has open slots.
+        // If requireActiveSlot is true, it strictly prioritizes targets with open ACTIVE attack slots (Hunter Instinct).
+        public Agent FindAlternativeTarget(Agent attacker, bool requireActiveSlot = false)
         {
             if (attacker == null || !attacker.IsActive() || Mission.Current == null) return null;
 
@@ -261,6 +387,7 @@ namespace DynamicCombat
 
             int maxSlots = settings.MaxAttackSlots;
             int maxQueue = settings.MaxQueueSlots;
+            float currentTime = Mission.Current.CurrentTime;
 
             Agent bestTarget = null;
             float closestDistSq = float.MaxValue;
@@ -272,10 +399,20 @@ namespace DynamicCombat
                 if (!potentialTarget.IsActive() || !potentialTarget.IsHuman || potentialTarget.Team == null) continue;
                 if (!attacker.Team.IsEnemyOf(potentialTarget.Team)) continue;
 
+                // Avoid blacklisted targets
+                if (IsBlacklisted(attacker, potentialTarget, currentTime)) continue;
+
                 int activeCount = _activeEngagements.TryGetValue(potentialTarget, out var aList) ? aList.Count : 0;
                 int queueCount = _queuedAttackers.TryGetValue(potentialTarget, out var qList) ? qList.Count : 0;
 
-                if (activeCount >= maxSlots && queueCount >= maxQueue) continue; // Target is also full
+                if (requireActiveSlot)
+                {
+                    if (activeCount >= maxSlots) continue;
+                }
+                else
+                {
+                    if (activeCount >= maxSlots && queueCount >= maxQueue) continue; // Target is fully saturated
+                }
 
                 float distSq = attacker.Position.DistanceSquared(potentialTarget.Position);
                 if (distSq < closestDistSq)
@@ -283,6 +420,12 @@ namespace DynamicCombat
                     closestDistSq = distSq;
                     bestTarget = potentialTarget;
                 }
+            }
+
+            // Fallback: If we demanded an active slot but found none, just look for ANY open queue.
+            if (bestTarget == null && requireActiveSlot)
+            {
+                return FindAlternativeTarget(attacker, false);
             }
 
             return bestTarget;
@@ -293,15 +436,7 @@ namespace DynamicCombat
              if (attacker == null || target == null) return;
              if (_activeEngagements.TryGetValue(target, out var activeList) && activeList.Contains(attacker))
              {
-                 activeList.Remove(attacker);
-                 // Move back to queue
-                 if (!_queuedAttackers.TryGetValue(target, out var queueList))
-                 {
-                    queueList = new List<Agent>(8);
-                    _queuedAttackers[target] = queueList;
-                 }
-                 if (!queueList.Contains(attacker))
-                    queueList.Add(attacker);
+                 DemoteToQueue(attacker, target, Mission.Current.CurrentTime);
              }
         }
 

@@ -20,13 +20,14 @@ namespace DynamicCombat
             _tickTimer += dt;
             if (_tickTimer >= UpdateInterval)
             {
+                float passedTime = _tickTimer;
                 _tickTimer = 0f;
                 CombatRegistry.Instance.UpdateSlots();
-                UpdateAgents();
+                UpdateAgents(passedTime);
             }
         }
 
-        private void UpdateAgents()
+        private void UpdateAgents(float dt)
         {
             var settings = DynamicCombatSettings.Instance;
             if (settings == null) return;
@@ -61,11 +62,12 @@ namespace DynamicCombat
                     continue;
                 }
 
-                // Register attacker to the target's registry. If full, retarget.
-                bool registered = CombatRegistry.Instance.TryRegisterAttacker(attacker, target);
-                if (!registered)
+                // If completely free of an attack slot or queue, trigger Hunter Instinct Preference
+                // This means looking for active slots before settling for a queue
+                if (!CombatRegistry.Instance.TryRegisterAttacker(attacker, target))
                 {
-                    Agent newTarget = CombatRegistry.Instance.FindAlternativeTarget(attacker);
+                    // Registration failed because queue is full or target is blacklisted.
+                    Agent newTarget = CombatRegistry.Instance.FindAlternativeTarget(attacker, true); // true = require active slot
                     if (newTarget != null && newTarget.IsActive())
                     {
                         attacker.SetTargetAgent(newTarget);
@@ -74,7 +76,6 @@ namespace DynamicCombat
                     }
                     else
                     {
-                        // No valid targets open, just clear combat registry tracking but keep vanilla target
                         CombatRegistry.Instance.RemoveAttacker(attacker);
                     }
                 }
@@ -82,16 +83,57 @@ namespace DynamicCombat
                 bool hasActiveSlot = CombatRegistry.Instance.HasActiveSlot(attacker, target);
                 bool isTargetSwarmed = CombatRegistry.Instance.IsTargetSwarmed(target);
 
+                float distanceToTarget = attacker.Position.Distance(target.Position);
+
                 // Rear-Quadrant Truncation
                 bool isBehindTarget = CombatRegistry.IsInRearQuadrant(attacker, target, rearAngle);
 
-                if (isBehindTarget)
+                if (isBehindTarget && hasActiveSlot)
                 {
                     // Strip authorization
-                    if (hasActiveSlot)
+                    CombatRegistry.Instance.RemoveActiveSlot(attacker, target);
+                    hasActiveSlot = false;
+                }
+
+                // Active Attacker Priority vs. Spatial Eviction
+                if (hasActiveSlot)
+                {
+                    if (distanceToTarget > minDistance + 2.0f) // If they drift too far outside striking circle
                     {
+                        // Spatial Eviction & Demotion
                         CombatRegistry.Instance.RemoveActiveSlot(attacker, target);
                         hasActiveSlot = false;
+                    }
+                    else
+                    {
+                        // Active Attacker Priority: Immune to interrupts, lock absolute
+                        CombatRegistry.Instance.ResetQueueTimer(attacker);
+                    }
+                }
+
+                // Queue Flank Interrupt & Blacklist
+                if (!hasActiveSlot && target != null)
+                {
+                    bool tookDamage = CombatRegistry.Instance.DidTakeDamage(attacker);
+                    CombatRegistry.Instance.IncrementQueueTimer(attacker, dt);
+                    float queueTime = CombatRegistry.Instance.GetQueueTimer(attacker);
+
+                    if (tookDamage || queueTime > 5.0f)
+                    {
+                        // Immediately cancel timer
+                        CombatRegistry.Instance.ResetQueueTimer(attacker);
+                        // Break current lock & place on blacklist for 2 seconds
+                        CombatRegistry.Instance.BlacklistTarget(attacker, target, Mission.Current.CurrentTime, 2.0f);
+                        CombatRegistry.Instance.RemoveAttacker(attacker);
+
+                        // Scan for alternative
+                        Agent altTarget = CombatRegistry.Instance.FindAlternativeTarget(attacker, true);
+                        if (altTarget != null)
+                        {
+                            attacker.SetTargetAgent(altTarget);
+                            CombatRegistry.Instance.TryRegisterAttacker(attacker, altTarget);
+                            target = altTarget;
+                        }
                     }
                 }
 
@@ -122,8 +164,6 @@ namespace DynamicCombat
                 if (!hasActiveSlot || isBehindTarget)
                 {
                     // Passive Containment Override
-                    float distanceToTarget = attacker.Position.Distance(target.Position);
-
                     // If the attacker is outside the maximum distance, do not micromanage them.
                     // This allows standard formation AI and pathfinding to work naturally
                     // until they approach the engagement zone.
