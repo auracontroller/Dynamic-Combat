@@ -10,7 +10,7 @@
     <DependedModule Id="Sandbox" />
     <DependedModule Id="CustomBattle" />
     <DependedModule Id="StoryMode" />
-    <DependedModule Id="Bannerlord.MCM" />
+    <DependedModule Id="MCM.UI.Adapter.MCMv5.dll" />
   </DependedModules>
   <SubModules>
     <SubModule>
