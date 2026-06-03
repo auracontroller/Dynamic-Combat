@@ -61,8 +61,23 @@ namespace DynamicCombat
                     continue;
                 }
 
-                // Register attacker to the target's registry
-                CombatRegistry.Instance.RegisterAttacker(attacker, target);
+                // Register attacker to the target's registry. If full, retarget.
+                bool registered = CombatRegistry.Instance.TryRegisterAttacker(attacker, target);
+                if (!registered)
+                {
+                    Agent newTarget = CombatRegistry.Instance.FindAlternativeTarget(attacker);
+                    if (newTarget != null && newTarget.IsActive())
+                    {
+                        attacker.SetTargetAgent(newTarget);
+                        CombatRegistry.Instance.TryRegisterAttacker(attacker, newTarget);
+                        target = newTarget; // Update local ref for this tick
+                    }
+                    else
+                    {
+                        // No valid targets open, just clear combat registry tracking but keep vanilla target
+                        CombatRegistry.Instance.RemoveAttacker(attacker);
+                    }
+                }
 
                 bool hasActiveSlot = CombatRegistry.Instance.HasActiveSlot(attacker, target);
                 bool isTargetSwarmed = CombatRegistry.Instance.IsTargetSwarmed(target);
@@ -137,16 +152,20 @@ namespace DynamicCombat
                             // Inside the dead-zone, zero-movement. Let them stop.
                             attacker.DisableScriptedMovement();
                             attacker.SetMaximumSpeedLimit(0f, false); // Try to force them to stop walking towards the target
-
-                            // Shield block if possible
-                            if (HasShield(attacker))
-                            {
-                                // attacker.SetDefendAction(1); // 1 = Defend down/forward usually, might need to use specific action
-                            }
                         }
 
-                        // Suppress attack
-                        attacker.SetActionChannel(1, ActionIndexCache.act_none, false, 0, 0, 0, 0, 0, 0, false, 0, 0, true);
+                        // Force the agent to block/defend while waiting in the queue
+                        // We use ActionIndexCache.act_defend_shield_up_forward to trigger the defense state if they have a shield
+                        if (HasShield(attacker))
+                        {
+                            attacker.SetActionChannel(1, ActionIndexCache.Create("act_defend_shield_up_forward"), false, 0, 0, 1f, 0f, 0.5f, 0f, false, -0.2f, 0, true);
+                            attacker.EnforceShieldUsage(Agent.UsageDirection.DefendDown);
+                        }
+                        else
+                        {
+                            // Without a shield, simply suppress their attack
+                            attacker.SetActionChannel(1, ActionIndexCache.act_none, false, 0, 0, 0, 0, 0, 0, false, 0, 0, true);
+                        }
                     }
                 }
                 else
@@ -154,6 +173,7 @@ namespace DynamicCombat
                     // Has active slot, allow normal combat behavior
                     attacker.DisableScriptedMovement();
                     attacker.SetMaximumSpeedLimit(-1f, false);
+                    attacker.EnforceShieldUsage(Agent.UsageDirection.None);
                 }
             }
         }

@@ -34,10 +34,36 @@ namespace DynamicCombat
             _attackerCurrentTarget.Clear();
         }
 
-        public void RegisterAttacker(Agent attacker, Agent target)
+        public bool TryRegisterAttacker(Agent attacker, Agent target)
         {
             if (attacker == null || target == null || !attacker.IsActive() || !target.IsActive())
-                return;
+                return false;
+
+            var settings = DynamicCombatSettings.Instance;
+            if (settings == null) return false;
+
+            int maxSlots = settings.MaxAttackSlots;
+            int maxQueue = settings.MaxQueueSlots;
+
+            // Check if they are already registered to this target
+            bool isAlreadyQueued = _queuedAttackers.TryGetValue(target, out var targetQueue) && targetQueue.Contains(attacker);
+            bool isAlreadyActive = _activeEngagements.TryGetValue(target, out var targetActive) && targetActive.Contains(attacker);
+
+            if (isAlreadyQueued || isAlreadyActive)
+            {
+                // Ensure map is synced
+                _attackerCurrentTarget[attacker] = target;
+                return true;
+            }
+
+            // Target is full check
+            int currentActiveCount = targetActive?.Count ?? 0;
+            int currentQueueCount = targetQueue?.Count ?? 0;
+
+            if (currentActiveCount >= maxSlots && currentQueueCount >= maxQueue)
+            {
+                return false; // Overflow! Cannot accept this attacker
+            }
 
             // If attacker is targeting someone else currently, remove them from the old target
             if (_attackerCurrentTarget.TryGetValue(attacker, out Agent oldTarget))
@@ -46,31 +72,18 @@ namespace DynamicCombat
                 {
                     RemoveAttackerFromTargetLists(attacker, oldTarget);
                 }
-                else
-                {
-                    // Already targeting this target. Ensure they are in the queue or active list.
-                    if (HasActiveSlot(attacker, target) || (_queuedAttackers.TryGetValue(target, out var qList) && qList.Contains(attacker)))
-                    {
-                        return; // Already registered to this target
-                    }
-                }
             }
 
             _attackerCurrentTarget[attacker] = target;
 
-            if (!_queuedAttackers.TryGetValue(target, out var queueList))
+            if (targetQueue == null)
             {
-                queueList = new List<Agent>(8);
-                _queuedAttackers[target] = queueList;
+                targetQueue = new List<Agent>(8);
+                _queuedAttackers[target] = targetQueue;
             }
 
-            if (!queueList.Contains(attacker))
-            {
-                if (!_activeEngagements.TryGetValue(target, out var activeList) || !activeList.Contains(attacker))
-                {
-                    queueList.Add(attacker);
-                }
-            }
+            targetQueue.Add(attacker);
+            return true;
         }
 
         private void RemoveAttackerFromTargetLists(Agent attacker, Agent target)
@@ -236,6 +249,43 @@ namespace DynamicCombat
             int queueCount = _queuedAttackers.TryGetValue(target, out var queueList) ? queueList.Count : 0;
 
             return (activeCount + queueCount) > 10;
+        }
+
+        // Finds the closest valid enemy target that has open slots (either active or queue)
+        public Agent FindAlternativeTarget(Agent attacker)
+        {
+            if (attacker == null || !attacker.IsActive() || Mission.Current == null) return null;
+
+            var settings = DynamicCombatSettings.Instance;
+            if (settings == null) return null;
+
+            int maxSlots = settings.MaxAttackSlots;
+            int maxQueue = settings.MaxQueueSlots;
+
+            Agent bestTarget = null;
+            float closestDistSq = float.MaxValue;
+
+            var agents = Mission.Current.Agents;
+            for (int i = 0; i < agents.Count; i++)
+            {
+                var potentialTarget = agents[i];
+                if (!potentialTarget.IsActive() || !potentialTarget.IsHuman || potentialTarget.Team == null) continue;
+                if (!attacker.Team.IsEnemyOf(potentialTarget.Team)) continue;
+
+                int activeCount = _activeEngagements.TryGetValue(potentialTarget, out var aList) ? aList.Count : 0;
+                int queueCount = _queuedAttackers.TryGetValue(potentialTarget, out var qList) ? qList.Count : 0;
+
+                if (activeCount >= maxSlots && queueCount >= maxQueue) continue; // Target is also full
+
+                float distSq = attacker.Position.DistanceSquared(potentialTarget.Position);
+                if (distSq < closestDistSq)
+                {
+                    closestDistSq = distSq;
+                    bestTarget = potentialTarget;
+                }
+            }
+
+            return bestTarget;
         }
 
         public void RemoveActiveSlot(Agent attacker, Agent target)
