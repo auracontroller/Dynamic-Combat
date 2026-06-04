@@ -187,6 +187,9 @@ namespace DynamicCombat
             {
                 RemoveAttackerFromTargetLists(attacker, target);
                 _attackerCurrentTarget.Remove(attacker);
+
+                // Immediate promotion check to fill any newly vacated slots from this attacker's removal
+                TryPromoteQueueToActive(target);
             }
         }
 
@@ -240,6 +243,72 @@ namespace DynamicCombat
             ModLogger.Log($"[DynamicCombat] Active Slots: {totalActive} | Queued: {totalQueued}");
         }
 
+        public void TryPromoteQueueToActive(Agent target)
+        {
+            if (target == null || !target.IsActive()) return;
+
+            var settings = DynamicCombatSettings.Instance;
+            if (settings == null) return;
+
+            int maxSlots = settings.MaxAttackSlots;
+            float rearAngle = settings.RearAngle;
+
+            if (!_activeEngagements.TryGetValue(target, out var activeList))
+            {
+                activeList = new List<Agent>(maxSlots);
+                _activeEngagements[target] = activeList;
+            }
+
+            if (!_queuedAttackers.TryGetValue(target, out var queueList) || queueList.Count == 0)
+            {
+                return; // Nothing to promote
+            }
+
+            // Clean up inactive agents before checking slot availability
+            activeList.RemoveAll(a => a == null || !a.IsActive());
+            queueList.RemoveAll(a => a == null || !a.IsActive());
+
+            // Try to promote queued attackers to active slots
+            while (activeList.Count < maxSlots && queueList.Count > 0)
+            {
+                // Find closest eligible attacker
+                Agent bestCandidate = null;
+                float closestDistSq = float.MaxValue;
+                int candidateIndex = -1;
+
+                for (int j = 0; j < queueList.Count; j++)
+                {
+                    var candidate = queueList[j];
+
+                    // Check if candidate is behind the target. If so, they are not eligible for promotion.
+                    if (IsInRearQuadrant(candidate, target, rearAngle))
+                    {
+                        continue;
+                    }
+
+                    float distSq = candidate.Position.DistanceSquared(target.Position);
+                    if (distSq < closestDistSq)
+                    {
+                        closestDistSq = distSq;
+                        bestCandidate = candidate;
+                        candidateIndex = j;
+                    }
+                }
+
+                if (bestCandidate != null)
+                {
+                    queueList.RemoveAt(candidateIndex);
+                    activeList.Add(bestCandidate);
+                    ModLogger.Log($"Agent {bestCandidate.Index} promoted to ACTIVE slot for Target {target.Index}.");
+                }
+                else
+                {
+                    // No eligible candidates found (e.g. all in rear quadrant)
+                    break;
+                }
+            }
+        }
+
         public void UpdateSlots()
         {
             var settings = DynamicCombatSettings.Instance;
@@ -247,7 +316,6 @@ namespace DynamicCombat
 
             int maxSlots = settings.MaxAttackSlots;
             int maxQueue = settings.MaxQueueSlots;
-            float rearAngle = settings.RearAngle;
             float currentTime = Mission.Current.CurrentTime;
 
             // Pre-allocate list to avoid garbage collection hit every 250ms
@@ -282,62 +350,11 @@ namespace DynamicCombat
                 }
 
                 // Cleanup inactive attackers from this target's lists
-                for (int j = activeList.Count - 1; j >= 0; j--)
-                {
-                    if (activeList[j] == null || !activeList[j].IsActive())
-                    {
-                        _attackerCurrentTarget.Remove(activeList[j]);
-                        activeList.RemoveAt(j);
-                    }
-                }
-                for (int j = queueList.Count - 1; j >= 0; j--)
-                {
-                    if (queueList[j] == null || !queueList[j].IsActive())
-                    {
-                        _attackerCurrentTarget.Remove(queueList[j]);
-                        queueList.RemoveAt(j);
-                    }
-                }
+                activeList.RemoveAll(a => a == null || !a.IsActive());
+                queueList.RemoveAll(a => a == null || !a.IsActive());
 
-                // Try to promote queued attackers to active slots
-                while (activeList.Count < maxSlots && queueList.Count > 0)
-                {
-                    // Find closest eligible attacker
-                    Agent bestCandidate = null;
-                    float closestDistSq = float.MaxValue;
-                    int candidateIndex = -1;
-
-                    for (int j = 0; j < queueList.Count; j++)
-                    {
-                        var candidate = queueList[j];
-
-                        // Check if candidate is behind the target. If so, they are not eligible for promotion.
-                        if (IsInRearQuadrant(candidate, target, rearAngle))
-                        {
-                            continue;
-                        }
-
-                        float distSq = candidate.Position.DistanceSquared(target.Position);
-                        if (distSq < closestDistSq)
-                        {
-                            closestDistSq = distSq;
-                            bestCandidate = candidate;
-                            candidateIndex = j;
-                        }
-                    }
-
-                    if (bestCandidate != null)
-                    {
-                        queueList.RemoveAt(candidateIndex);
-                        activeList.Add(bestCandidate);
-                        ModLogger.Log($"Agent {bestCandidate.Index} promoted to ACTIVE slot for Target {target.Index}.");
-                    }
-                    else
-                    {
-                        // No eligible candidates found (e.g. all in rear quadrant)
-                        break;
-                    }
-                }
+                // Perform promotion loop for this target
+                TryPromoteQueueToActive(target);
 
                 // Active Over-Capacity Audit: Demote if over max slots
                 // Specifically evicting the furthest (or last-added, we use furthest as a proxy for least committed)
@@ -455,6 +472,9 @@ namespace DynamicCombat
              if (_activeEngagements.TryGetValue(target, out var activeList) && activeList.Contains(attacker))
              {
                  DemoteToQueue(attacker, target, Mission.Current.CurrentTime);
+
+                 // Immediate promotion check to fill the newly vacated slot and prevent hesitation
+                 TryPromoteQueueToActive(target);
              }
         }
 

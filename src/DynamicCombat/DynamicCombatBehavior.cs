@@ -13,7 +13,7 @@ namespace DynamicCombat
         private float _tickTimer = 0f;
         private const float UpdateInterval = 0.25f; // Update every 250ms to save performance
 
-        private static readonly ActionIndexCache CheerActionCache = ActionIndexCache.Create("act_arena_cheer_1");
+        private static readonly ActionIndexCache CheerActionCache = ActionIndexCache.Create("act_command_view_cheer");
 
         // Tracks agents currently forced into a defensive animation to prevent FMOD frame-spam leaks
         private System.Collections.Generic.Dictionary<Agent, bool> _isCheering = new System.Collections.Generic.Dictionary<Agent, bool>();
@@ -72,11 +72,12 @@ namespace DynamicCombat
                 if (target == null || !target.IsActive() || !target.IsHuman)
                 {
                     CombatRegistry.Instance.RemoveAttacker(attacker);
-                    continue;
+                    // Instead of continuing (which skips overflow logic entirely), let it fall through to TryRegisterAttacker which will fail,
+                    // and then the fallback logic will attempt to find a target. If it can't find a target, it will hit global overflow.
                 }
 
                 // If completely free of an attack slot or queue, trigger Hunter Instinct Preference
-                if (!CombatRegistry.Instance.TryRegisterAttacker(attacker, target))
+                if (target == null || !CombatRegistry.Instance.TryRegisterAttacker(attacker, target))
                 {
                     // Registration failed because queue is full or target is blacklisted.
                     Agent newTarget = CombatRegistry.Instance.FindAlternativeTarget(attacker, true); // true = require active slot
@@ -88,7 +89,20 @@ namespace DynamicCombat
                     }
                     else
                     {
-                        CombatRegistry.Instance.RemoveAttacker(attacker);
+                        // Fallback to queue search
+                        Agent queueTarget = CombatRegistry.Instance.FindAlternativeTarget(attacker, false);
+                        if (queueTarget != null && queueTarget.IsActive())
+                        {
+                            attacker.SetTargetAgent(queueTarget);
+                            CombatRegistry.Instance.TryRegisterAttacker(attacker, queueTarget);
+                            target = queueTarget;
+                        }
+                        else
+                        {
+                            CombatRegistry.Instance.RemoveAttacker(attacker);
+                            // Set to null to explicitly trigger global overflow handling in EnforceSuppression
+                            target = null;
+                        }
                     }
                 }
 
@@ -190,10 +204,17 @@ namespace DynamicCombat
 
                 Agent target = attacker.GetTargetAgent();
 
-                if (target == null || !target.IsActive() || !target.IsHuman)
-                    continue;
-
                 bool isCheering = _isCheering.TryGetValue(attacker, out bool cheeringState) && cheeringState;
+
+                if (target == null || !target.IsActive() || !target.IsHuman)
+                {
+                    // If they have no valid target whatsoever (global overflow), halt and cheer
+                    attacker.SetTargetAgent(null);
+                    attacker.DisableScriptedMovement();
+                    attacker.SetMaximumSpeedLimit(0f, false);
+                    EnterCheerState(attacker);
+                    continue;
+                }
 
                 // Handle Cheer Interruption from Damage
                 if (isCheering)
@@ -362,7 +383,9 @@ namespace DynamicCombat
         {
             if (!_isCheering.TryGetValue(agent, out bool cheering) || !cheering)
             {
-                agent.SetActionChannel(1, CheerActionCache, false, 0, 0, 1f, 0f, 0.5f, 0f, false, -0.2f, 0, true);
+                // Play on channel 0 (full body) instead of channel 1 to guarantee it overrides stance
+                agent.SetActionChannel(0, CheerActionCache, false, 0, 0, 1f, 0f, 0.5f, 0f, false, -0.2f, 0, true);
+                agent.EnforceShieldUsage(Agent.UsageDirection.None); // Ensure shield doesn't block the animation
                 _isCheering[agent] = true;
                 ModLogger.Log($"Agent {agent.Index} entering Cheer state.");
             }
@@ -374,7 +397,7 @@ namespace DynamicCombat
             {
                 _isCheering[agent] = false;
                 // Force an action clear to snap them out of the cheer quickly
-                agent.SetActionChannel(1, ActionIndexCache.act_none, true, 0, 0, 1f, 0f, 0.5f, 0f, false, -0.2f, 0, true);
+                agent.SetActionChannel(0, ActionIndexCache.act_none, true, 0, 0, 1f, 0f, 0.5f, 0f, false, -0.2f, 0, true);
                 ModLogger.Log($"Agent {agent.Index} clearing Cheer state.");
             }
         }
