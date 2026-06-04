@@ -14,7 +14,6 @@ namespace DynamicCombat
         private const float UpdateInterval = 0.25f; // Update every 250ms to save performance
 
         private static readonly ActionIndexCache DefendActionCache = ActionIndexCache.Create("act_defend_shield_up_forward");
-        private static readonly ActionIndexCache NoneActionCache = ActionIndexCache.act_none;
 
         // Tracks agents currently forced into a defensive animation to prevent FMOD frame-spam leaks
         private System.Collections.Generic.Dictionary<Agent, bool> _isDefending = new System.Collections.Generic.Dictionary<Agent, bool>();
@@ -237,19 +236,11 @@ namespace DynamicCombat
 
                         if (!currentlyDefending)
                         {
-                            if (HasShield(attacker))
-                            {
-                                attacker.SetActionChannel(1, DefendActionCache, false, 0, 0, 1f, 0f, 0.5f, 0f, false, -0.2f, 0, true);
-                                attacker.EnforceShieldUsage(Agent.UsageDirection.DefendDown);
-                            }
-                            else
-                            {
-                                // Without a shield, simply suppress their attack
-                                attacker.SetActionChannel(1, NoneActionCache, false, 0, 0, 0, 0, 0, 0, false, 0, 0, true);
-                            }
+                            attacker.SetActionChannel(1, DefendActionCache, false, 0, 0, 1f, 0f, 0.5f, 0f, false, -0.2f, 0, true);
+                            attacker.EnforceShieldUsage(Agent.UsageDirection.DefendDown);
                             _isDefending[attacker] = true;
                         }
-                        else if (HasShield(attacker))
+                        else
                         {
                             // Need to continually enforce usage even if action is set
                             attacker.EnforceShieldUsage(Agent.UsageDirection.DefendDown);
@@ -286,20 +277,6 @@ namespace DynamicCombat
             return item.ItemType == ItemObject.ItemTypeEnum.Bow ||
                    item.ItemType == ItemObject.ItemTypeEnum.Crossbow ||
                    item.ItemType == ItemObject.ItemTypeEnum.Thrown;
-        }
-
-        private bool HasShield(Agent agent)
-        {
-            var equipment = agent.Equipment;
-            if (equipment == null) return false;
-
-            var wieldedOffhand = agent.WieldedOffhandWeapon;
-            if (!wieldedOffhand.IsEmpty && wieldedOffhand.Item != null && wieldedOffhand.Item.ItemType == ItemObject.ItemTypeEnum.Shield)
-            {
-                return true;
-            }
-
-            return false;
         }
 
         public override void OnAgentDeleted(Agent agent)
