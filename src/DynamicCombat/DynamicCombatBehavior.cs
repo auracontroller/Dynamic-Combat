@@ -16,6 +16,9 @@ namespace DynamicCombat
         private static readonly ActionIndexCache DefendActionCache = ActionIndexCache.Create("act_defend_shield_up_forward");
         private static readonly ActionIndexCache NoneActionCache = ActionIndexCache.act_none;
 
+        // Tracks agents currently forced into a defensive animation to prevent FMOD frame-spam leaks
+        private System.Collections.Generic.Dictionary<Agent, bool> _isDefending = new System.Collections.Generic.Dictionary<Agent, bool>();
+
         public override void OnMissionTick(float dt)
         {
             base.OnMissionTick(dt);
@@ -202,22 +205,26 @@ namespace DynamicCombat
 
                         // Force the agent to block/defend while waiting in the queue
                         // We use ActionIndexCache.act_defend_shield_up_forward to trigger the defense state if they have a shield
-                        ActionIndexValueCache currentAction = attacker.GetCurrentActionValue(1);
-                        if (HasShield(attacker))
+                        bool currentlyDefending = _isDefending.TryGetValue(attacker, out bool def) && def;
+
+                        if (!currentlyDefending)
                         {
-                            if (currentAction != DefendActionCache)
+                            if (HasShield(attacker))
                             {
                                 attacker.SetActionChannel(1, DefendActionCache, false, 0, 0, 1f, 0f, 0.5f, 0f, false, -0.2f, 0, true);
+                                attacker.EnforceShieldUsage(Agent.UsageDirection.DefendDown);
                             }
-                            attacker.EnforceShieldUsage(Agent.UsageDirection.DefendDown);
-                        }
-                        else
-                        {
-                            // Without a shield, simply suppress their attack
-                            if (currentAction != NoneActionCache)
+                            else
                             {
+                                // Without a shield, simply suppress their attack
                                 attacker.SetActionChannel(1, NoneActionCache, false, 0, 0, 0, 0, 0, 0, false, 0, 0, true);
                             }
+                            _isDefending[attacker] = true;
+                        }
+                        else if (HasShield(attacker))
+                        {
+                            // Need to continually enforce usage even if action is set
+                            attacker.EnforceShieldUsage(Agent.UsageDirection.DefendDown);
                         }
                     }
                 }
@@ -227,6 +234,7 @@ namespace DynamicCombat
                     attacker.DisableScriptedMovement();
                     attacker.SetMaximumSpeedLimit(-1f, false);
                     attacker.EnforceShieldUsage(Agent.UsageDirection.None);
+                    _isDefending[attacker] = false;
                 }
             }
         }
@@ -265,18 +273,21 @@ namespace DynamicCombat
         {
             base.OnAgentDeleted(agent);
             CombatRegistry.Instance.RemoveAttacker(agent);
+            _isDefending.Remove(agent);
         }
 
         public override void OnRemoveBehavior()
         {
             base.OnRemoveBehavior();
             CombatRegistry.Instance.Clear();
+            _isDefending.Clear();
         }
 
         protected override void OnEndMission()
         {
             base.OnEndMission();
             CombatRegistry.Instance.Clear();
+            _isDefending.Clear();
         }
     }
 }
