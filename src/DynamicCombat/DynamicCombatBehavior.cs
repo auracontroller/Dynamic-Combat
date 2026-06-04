@@ -29,23 +29,23 @@ namespace DynamicCombat
                 float passedTime = _tickTimer;
                 _tickTimer = 0f;
 
+                // Keep slot allocation, telemetry logging, and state calculation securely on the 250ms interval tick.
                 CombatRegistry.Instance.UpdateSlots();
                 CombatRegistry.Instance.PrintTelemetry();
-
-                // Reverted from Concurrency Shield to standard 250ms tick.
-                // Calling unmanaged scripting/pathing APIs (SetScriptedPosition, DisableScriptedMovement)
-                // every frame overflows the unmanaged device reference queues, causing ERC2112 on exit.
-                UpdateAgents(passedTime);
+                UpdateSlotAllocations(passedTime);
             }
+
+            // Continuous suppression commands moved back to per-frame loop to actively suppress vanilla AI.
+            // C# dictionary guards prevent spamming unmanaged FMOD action requests.
+            EnforceSuppression(dt);
         }
 
-        private void UpdateAgents(float dt)
+        private void UpdateSlotAllocations(float dt)
         {
             var settings = DynamicCombatSettings.Instance;
             if (settings == null) return;
 
             float minDistance = settings.MinDistance;
-            float maxDistance = settings.MaxDistance;
             float rearAngle = settings.RearAngle;
 
             var agents = Mission.Current.Agents;
@@ -59,7 +59,6 @@ namespace DynamicCombat
                 if (!attacker.IsActive() || !attacker.IsHuman)
                     continue;
 
-                // We only care about melee fighters. If they are holding a ranged weapon and using it as ranged, ignore.
                 if (IsRanged(attacker))
                 {
                     CombatRegistry.Instance.RemoveAttacker(attacker);
@@ -75,7 +74,6 @@ namespace DynamicCombat
                 }
 
                 // If completely free of an attack slot or queue, trigger Hunter Instinct Preference
-                // This means looking for active slots before settling for a queue
                 if (!CombatRegistry.Instance.TryRegisterAttacker(attacker, target))
                 {
                     // Registration failed because queue is full or target is blacklisted.
@@ -93,8 +91,6 @@ namespace DynamicCombat
                 }
 
                 bool hasActiveSlot = CombatRegistry.Instance.HasActiveSlot(attacker, target);
-                bool isTargetSwarmed = CombatRegistry.Instance.IsTargetSwarmed(target);
-
                 float distanceToTarget = attacker.Position.Distance(target.Position);
 
                 // Rear-Quadrant Truncation
@@ -102,7 +98,6 @@ namespace DynamicCombat
 
                 if (isBehindTarget && hasActiveSlot)
                 {
-                    // Strip authorization
                     CombatRegistry.Instance.RemoveActiveSlot(attacker, target);
                     hasActiveSlot = false;
                 }
@@ -148,6 +143,41 @@ namespace DynamicCombat
                         }
                     }
                 }
+            }
+        }
+
+        private void EnforceSuppression(float dt)
+        {
+            var settings = DynamicCombatSettings.Instance;
+            if (settings == null) return;
+
+            float minDistance = settings.MinDistance;
+            float maxDistance = settings.MaxDistance;
+            float rearAngle = settings.RearAngle;
+
+            var agents = Mission.Current.Agents;
+            int count = agents.Count;
+
+            for (int i = 0; i < count; i++)
+            {
+                Agent attacker = agents[i];
+
+                if (!attacker.IsActive() || !attacker.IsHuman)
+                    continue;
+
+                if (IsRanged(attacker))
+                    continue;
+
+                Agent target = attacker.GetTargetAgent();
+
+                if (target == null || !target.IsActive() || !target.IsHuman)
+                    continue;
+
+                bool hasActiveSlot = CombatRegistry.Instance.HasActiveSlot(attacker, target);
+                bool isTargetSwarmed = CombatRegistry.Instance.IsTargetSwarmed(target);
+                bool isBehindTarget = CombatRegistry.IsInRearQuadrant(attacker, target, rearAngle);
+
+                float distanceToTarget = attacker.Position.Distance(target.Position);
 
                 // Handle Cavalry
                 if (attacker.HasMount)
@@ -158,8 +188,6 @@ namespace DynamicCombat
                         float orbitDistance = maxDistance + 1.0f; // 1 meter outside max distance
                         Vec2 targetPos = target.Position.AsVec2;
 
-                        // Pick a position to orbit. We can approximate an orbit by picking a point offset by the orbit distance
-                        // and rotating it based on time.
                         float angle = (Mission.Current.CurrentTime * 0.5f) % (2 * (float)Math.PI);
                         Vec2 orbitPos = targetPos + new Vec2((float)Math.Cos(angle) * orbitDistance, (float)Math.Sin(angle) * orbitDistance);
 
@@ -177,8 +205,6 @@ namespace DynamicCombat
                 {
                     // Passive Containment Override
                     // If the attacker is outside the maximum distance, do not micromanage them.
-                    // This allows standard formation AI and pathfinding to work naturally
-                    // until they approach the engagement zone.
                     if (distanceToTarget > maxDistance)
                     {
                         attacker.DisableScriptedMovement();
@@ -207,7 +233,6 @@ namespace DynamicCombat
                         }
 
                         // Force the agent to block/defend while waiting in the queue
-                        // We use ActionIndexCache.act_defend_shield_up_forward to trigger the defense state if they have a shield
                         bool currentlyDefending = _isDefending.TryGetValue(attacker, out bool def) && def;
 
                         if (!currentlyDefending)
@@ -237,7 +262,12 @@ namespace DynamicCombat
                     attacker.DisableScriptedMovement();
                     attacker.SetMaximumSpeedLimit(-1f, false);
                     attacker.EnforceShieldUsage(Agent.UsageDirection.None);
-                    _isDefending[attacker] = false;
+
+                    if (_isDefending.TryGetValue(attacker, out bool def) && def)
+                    {
+                        // Safely unflag so we don't spam resets if they are already free
+                        _isDefending[attacker] = false;
+                    }
                 }
             }
         }
