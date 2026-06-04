@@ -35,6 +35,7 @@ namespace DynamicCombat
                         _isInitialized = true;
                     }
 
+
                     string formattedMessage = $"[{DateTime.Now:HH:mm:ss.fff}] {message}\n";
                     File.AppendAllText(LogFilePath, formattedMessage);
                 }

@@ -226,6 +226,18 @@ namespace DynamicCombat
                     }
                 }
 
+                bool isCheering = _isCheering.TryGetValue(attacker, out bool cheeringState) && cheeringState;
+
+                // Handle Cheer Interruption from Damage
+                if (isCheering)
+                {
+                    if (CombatRegistry.Instance.DidTakeDamage(attacker))
+                    {
+                        ClearCheerState(attacker);
+                        isCheering = false;
+                    }
+                }
+
                 bool hasActiveSlot = CombatRegistry.Instance.HasActiveSlot(attacker, target);
                 bool isTargetSwarmed = CombatRegistry.Instance.IsTargetSwarmed(target);
                 bool isBehindTarget = CombatRegistry.IsInRearQuadrant(attacker, target, rearAngle);
@@ -259,7 +271,6 @@ namespace DynamicCombat
                 if (assignedTarget != null && assignedTarget.IsActive() && target != assignedTarget)
                 {
                     attacker.SetTargetAgent(assignedTarget);
-
                     // Only log if we haven't already logged an override for this exact assignment
                     if (!_lastLoggedOverride.TryGetValue(attacker, out Agent lastOverride) || lastOverride != assignedTarget)
                     {
@@ -297,7 +308,6 @@ namespace DynamicCombat
                         // 1. Spatial Tolerance Zone & 2. The Queue Spacer
                         Vec2 attackerPos2D = attacker.Position.AsVec2;
                         Vec2 targetPos2D = target.Position.AsVec2;
-
                         Vec2 pushForce = new Vec2(0, 0);
 
                         // Calculate repulsion from target (maintain min distance)
@@ -323,7 +333,6 @@ namespace DynamicCombat
                                 {
                                     Vec2 peerDiff = attackerPos2D - peer.Position.AsVec2;
                                     Vec2 peerDirAway = peerDiff.LengthSquared < 0.0001f ? new Vec2(1, 0) : peerDiff.Normalized();
-
                                     // Scale push force based on how close they are
                                     pushForce += peerDirAway * (2.0f - distToPeer);
                                 }
@@ -332,7 +341,6 @@ namespace DynamicCombat
 
                         // Apply spatial forces or hold ground
                         float pushForceMagSq = pushForce.LengthSquared;
-
                         // Hysteresis: Require a stronger push to break an active cheer, compared to initiating a cheer
                         float breakCheerThreshold = isCheering ? 0.25f : 0.01f;
 
