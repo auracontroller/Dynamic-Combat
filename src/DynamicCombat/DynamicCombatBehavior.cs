@@ -17,6 +17,9 @@ namespace DynamicCombat
 
         // Tracks agents currently forced into a defensive animation to prevent FMOD frame-spam leaks
         private System.Collections.Generic.Dictionary<Agent, bool> _isCheering = new System.Collections.Generic.Dictionary<Agent, bool>();
+        
+        // Tracks the last target we logged a forced override for to prevent log spam
+        private System.Collections.Generic.Dictionary<Agent, Agent> _lastLoggedOverride = new System.Collections.Generic.Dictionary<Agent, Agent>();
 
         public override void OnMissionTick(float dt)
         {
@@ -235,8 +238,24 @@ namespace DynamicCombat
                 if (assignedTarget != null && assignedTarget.IsActive() && target != assignedTarget)
                 {
                     attacker.SetTargetAgent(assignedTarget);
+                    
+                    // Only log if we haven't already logged an override for this exact assignment
+                    if (!_lastLoggedOverride.TryGetValue(attacker, out Agent lastOverride) || lastOverride != assignedTarget)
+                    {
+                        ModLogger.Log($"Agent {attacker.Index} rubber-banding fixed: forced target override to {assignedTarget.Index}.");
+                        _lastLoggedOverride[attacker] = assignedTarget;
+                    }
+
                     target = assignedTarget; // Force the override
-                    ModLogger.Log($"Agent {attacker.Index} rubber-banding fixed: forced target override to {assignedTarget.Index}.");
+                }
+                else if (assignedTarget != null && assignedTarget.IsActive() && target == assignedTarget)
+                {
+                    // If native AI target aligns with our assigned target, we can clear the logged state
+                    // so if it rubber-bands again, we log it.
+                    if (_lastLoggedOverride.ContainsKey(attacker))
+                    {
+                        _lastLoggedOverride.Remove(attacker);
+                    }
                 }
 
                 if (!hasActiveSlot || isBehindTarget)
@@ -291,7 +310,12 @@ namespace DynamicCombat
                         }
 
                         // Apply spatial forces or hold ground
-                        if (pushForce.LengthSquared > 0.01f) // Needs to move to maintain spacing/min distance
+                        float pushForceMagSq = pushForce.LengthSquared;
+                        
+                        // Hysteresis: Require a stronger push to break an active cheer, compared to initiating a cheer
+                        float breakCheerThreshold = isCheering ? 0.25f : 0.01f;
+
+                        if (pushForceMagSq > breakCheerThreshold) // Needs to move to maintain spacing/min distance
                         {
                             ClearCheerState(attacker); // Break cheer so they can walk
                             Vec2 idealPos = attackerPos2D + pushForce;
@@ -360,6 +384,7 @@ namespace DynamicCombat
             base.OnAgentDeleted(agent);
             CombatRegistry.Instance.RemoveAttacker(agent);
             _isCheering.Remove(agent);
+            _lastLoggedOverride.Remove(agent);
         }
 
         public override void OnRemoveBehavior()
@@ -367,6 +392,7 @@ namespace DynamicCombat
             base.OnRemoveBehavior();
             CombatRegistry.Instance.Clear();
             _isCheering.Clear();
+            _lastLoggedOverride.Clear();
         }
 
         protected override void OnEndMission()
@@ -374,6 +400,7 @@ namespace DynamicCombat
             base.OnEndMission();
             CombatRegistry.Instance.Clear();
             _isCheering.Clear();
+            _lastLoggedOverride.Clear();
         }
     }
 }
