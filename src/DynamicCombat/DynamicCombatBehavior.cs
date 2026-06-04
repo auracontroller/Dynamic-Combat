@@ -302,62 +302,91 @@ namespace DynamicCombat
                     }
                     else
                     {
-                        // Force agent to face the enemy when inside max radius
-                        attacker.SetLookAgent(target);
+                        // Cascade 1: Calculate the Spatial Delta
+                        Vec3 vectorToTarget = target.Position - attacker.Position;
+                        float currentDistance = vectorToTarget.Length;
 
-                        // 1. Spatial Tolerance Zone & 2. The Queue Spacer
-                        Vec2 attackerPos2D = attacker.Position.AsVec2;
-                        Vec2 targetPos2D = target.Position.AsVec2;
-                        Vec2 pushForce = new Vec2(0, 0);
+                        // Cascade 2: Anchor the Body Orientation
+                        // Truncate the vertical Z-axis noise to maintain a level gaze.
+                        vectorToTarget.z = 0f;
 
-                        // Calculate repulsion from target (maintain min distance)
-                        if (distanceToTarget < minDistance)
+                        if (vectorToTarget.LengthSquared > 0.0001f)
                         {
-                            Vec2 diff = attackerPos2D - targetPos2D;
-                            Vec2 dirAway = diff.LengthSquared < 0.0001f ? new Vec2(1, 0) : diff.Normalized();
-                            // Strong push away from target if inside minimum ring
-                            pushForce += dirAway * (minDistance - distanceToTarget);
-                        }
+                            Vec3 lookDirection = vectorToTarget.NormalizedCopy();
+                            // Force the Agent's collision capsule and skeletal head to face the player natively.
+                            attacker.LookDirection = lookDirection;
 
-                        // Calculate repulsion from other queued peers (Queue Spacer)
-                        var queuedPeers = CombatRegistry.Instance.GetQueuedAttackers(target);
-                        if (queuedPeers != null)
-                        {
-                            for (int j = 0; j < queuedPeers.Count; j++)
+                            Vec2 forward2D = lookDirection.AsVec2;
+                            Vec2 right2D = new Vec2(forward2D.y, -forward2D.x);
+
+                            // Cascade 3: The Exclusion Zone & Queue Spacer
+                            Vec2 pushForce = Vec2.Zero;
+
+                            // Calculate repulsion from other queued peers (Queue Spacer)
+                            var queuedPeers = CombatRegistry.Instance.GetQueuedAttackers(target);
+                            if (queuedPeers != null)
                             {
-                                Agent peer = queuedPeers[j];
-                                if (peer == attacker || !peer.IsActive()) continue;
-
-                                float distToPeer = attacker.Position.Distance(peer.Position);
-                                if (distToPeer < 2.0f) // 2 meters spacer
+                                Vec2 attackerPos2D = attacker.Position.AsVec2;
+                                for (int j = 0; j < queuedPeers.Count; j++)
                                 {
-                                    Vec2 peerDiff = attackerPos2D - peer.Position.AsVec2;
-                                    Vec2 peerDirAway = peerDiff.LengthSquared < 0.0001f ? new Vec2(1, 0) : peerDiff.Normalized();
-                                    // Scale push force based on how close they are
-                                    pushForce += peerDirAway * (2.0f - distToPeer);
+                                    Agent peer = queuedPeers[j];
+                                    if (peer == attacker || !peer.IsActive()) continue;
+
+                                    float distToPeer = attacker.Position.Distance(peer.Position);
+                                    if (distToPeer < 2.0f) // 2 meters spacer
+                                    {
+                                        Vec2 peerDiff = attackerPos2D - peer.Position.AsVec2;
+                                        Vec2 peerDirAway = peerDiff.LengthSquared < 0.0001f ? new Vec2(1, 0) : peerDiff.Normalized();
+                                        // Scale push force based on how close they are
+                                        pushForce += peerDirAway * (2.0f - distToPeer);
+                                    }
                                 }
                             }
-                        }
 
-                        // Apply spatial forces or hold ground
-                        float pushForceMagSq = pushForce.LengthSquared;
-                        // Hysteresis: Require a stronger push to break an active cheer, compared to initiating a cheer
-                        float breakCheerThreshold = isCheering ? 0.25f : 0.01f;
+                            Vec2 movementInput = Vec2.Zero;
 
-                        if (pushForceMagSq > breakCheerThreshold) // Needs to move to maintain spacing/min distance
-                        {
-                            ClearCheerState(attacker); // Break cheer so they can walk
-                            Vec2 idealPos = attackerPos2D + pushForce;
-                            WorldPosition adjustmentPos = new WorldPosition(Mission.Current.Scene, UIntPtr.Zero, new Vec3(idealPos.x, idealPos.y, attacker.Position.z), false);
-                            attacker.SetScriptedPosition(ref adjustmentPos, false, Agent.AIScriptedFrameFlags.None);
-                            attacker.SetMaximumSpeedLimit(-1f, false); // Allow movement to the new spot
-                        }
-                        else
-                        {
-                            // Inside the safe fluid zone and properly spaced, hold ground.
-                            attacker.DisableScriptedMovement();
-                            attacker.SetMaximumSpeedLimit(0f, false);
-                            EnterCheerState(attacker); // Entering holding pattern, begin cheer
+                            if (currentDistance < minDistance)
+                            {
+                                // Bypass the pathfinder by hijacking the Agent's simulated movement input.
+                                // X = 0 (no strafing), Y = -1 (walk straight backward relative to LookDirection).
+                                // This triggers native ushiro (backward) walking animations fluidly.
+                                movementInput.y -= 1f;
+                            }
+
+                            // Integrate peer repulsion into MovementInputVector
+                            if (pushForce.LengthSquared > 0.0001f)
+                            {
+                                float localY = Vec2.DotProduct(pushForce, forward2D);
+                                float localX = Vec2.DotProduct(pushForce, right2D);
+                                movementInput.x += localX;
+                                movementInput.y += localY;
+                            }
+
+                            float inputMagSq = movementInput.LengthSquared;
+                            // Hysteresis: Require a stronger push to break an active cheer
+                            float breakCheerThreshold = isCheering ? 0.05f : 0.005f;
+
+                            if (inputMagSq > breakCheerThreshold)
+                            {
+                                ClearCheerState(attacker); // Break cheer so they can walk
+                                attacker.DisableScriptedMovement(); // Ensure scripted movement is off so we can hijack input
+                                attacker.SetMaximumSpeedLimit(-1f, false);
+
+                                // Cap movement input to length 1
+                                if (inputMagSq > 1f)
+                                {
+                                    movementInput = movementInput.Normalized();
+                                }
+                                attacker.MovementInputVector = movementInput;
+                            }
+                            else
+                            {
+                                // Flush the movement input cache when outside the exclusion zone and properly spaced.
+                                attacker.MovementInputVector = Vec2.Zero;
+                                attacker.DisableScriptedMovement();
+                                attacker.SetMaximumSpeedLimit(0f, false);
+                                EnterCheerState(attacker); // Entering holding pattern, begin cheer
+                            }
                         }
                     }
                 }
