@@ -459,6 +459,15 @@ namespace DynamicCombat
             return null;
         }
 
+        public Agent GetCurrentTarget(Agent attacker)
+        {
+            if (attacker != null && _attackerCurrentTarget.TryGetValue(attacker, out Agent target))
+            {
+                return target;
+            }
+            return null;
+        }
+
         // Shared utility to determine if attacker is in rear quadrant
         public static bool IsInRearQuadrant(Agent attacker, Agent target, float rearAngleDegrees)
         {

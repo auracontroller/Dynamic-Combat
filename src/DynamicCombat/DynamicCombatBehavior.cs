@@ -13,11 +13,9 @@ namespace DynamicCombat
         private float _tickTimer = 0f;
         private const float UpdateInterval = 0.25f; // Update every 250ms to save performance
 
-        private static readonly ActionIndexCache DefendActionCache = ActionIndexCache.Create("act_defend_shield_up_forward");
         private static readonly ActionIndexCache CheerActionCache = ActionIndexCache.Create("act_arena_cheer_1");
 
         // Tracks agents currently forced into a defensive animation to prevent FMOD frame-spam leaks
-        private System.Collections.Generic.Dictionary<Agent, bool> _isDefending = new System.Collections.Generic.Dictionary<Agent, bool>();
         private System.Collections.Generic.Dictionary<Agent, bool> _isCheering = new System.Collections.Generic.Dictionary<Agent, bool>();
 
         public override void OnMissionTick(float dt)
@@ -202,14 +200,6 @@ namespace DynamicCombat
                         ClearCheerState(attacker);
                         isCheering = false;
                     }
-                    else
-                    {
-                        // Maintain cheer state, hold ground, and skip standard suppression logic
-                        attacker.SetLookAgent(null);
-                        attacker.DisableScriptedMovement();
-                        attacker.SetMaximumSpeedLimit(0f, false);
-                        continue;
-                    }
                 }
 
                 bool hasActiveSlot = CombatRegistry.Instance.HasActiveSlot(attacker, target);
@@ -240,6 +230,14 @@ namespace DynamicCombat
                     }
                 }
 
+                // Strict Enforce Mod Target against Native AI rubber-banding
+                Agent assignedTarget = CombatRegistry.Instance.GetCurrentTarget(attacker);
+                if (assignedTarget != null && assignedTarget.IsActive() && target != assignedTarget)
+                {
+                    attacker.SetTargetAgent(assignedTarget);
+                    target = assignedTarget; // Force the override
+                }
+
                 if (!hasActiveSlot || isBehindTarget)
                 {
                     // Passive Containment Override
@@ -248,6 +246,7 @@ namespace DynamicCombat
                     {
                         attacker.DisableScriptedMovement();
                         attacker.SetMaximumSpeedLimit(-1f, false);
+                        ClearCheerState(attacker);
                     }
                     else
                     {
@@ -293,6 +292,7 @@ namespace DynamicCombat
                         // Apply spatial forces or hold ground
                         if (pushForce.LengthSquared > 0.01f) // Needs to move to maintain spacing/min distance
                         {
+                            ClearCheerState(attacker); // Break cheer so they can walk
                             Vec2 idealPos = attackerPos2D + pushForce;
                             WorldPosition adjustmentPos = new WorldPosition(Mission.Current.Scene, UIntPtr.Zero, new Vec3(idealPos.x, idealPos.y, attacker.Position.z), false);
                             attacker.SetScriptedPosition(ref adjustmentPos, false, Agent.AIScriptedFrameFlags.None);
@@ -303,21 +303,7 @@ namespace DynamicCombat
                             // Inside the safe fluid zone and properly spaced, hold ground.
                             attacker.DisableScriptedMovement();
                             attacker.SetMaximumSpeedLimit(0f, false);
-                        }
-
-                        // Force the agent to block/defend while waiting in the queue
-                        bool currentlyDefending = _isDefending.TryGetValue(attacker, out bool def) && def;
-
-                        if (!currentlyDefending)
-                        {
-                            attacker.SetActionChannel(1, DefendActionCache, false, 0, 0, 1f, 0f, 0.5f, 0f, false, -0.2f, 0, true);
-                            attacker.EnforceShieldUsage(Agent.UsageDirection.DefendDown);
-                            _isDefending[attacker] = true;
-                        }
-                        else
-                        {
-                            // Need to continually enforce usage even if action is set
-                            attacker.EnforceShieldUsage(Agent.UsageDirection.DefendDown);
+                            EnterCheerState(attacker); // Entering holding pattern, begin cheer
                         }
                     }
                 }
@@ -326,13 +312,7 @@ namespace DynamicCombat
                     // Has active slot, allow normal combat behavior
                     attacker.DisableScriptedMovement();
                     attacker.SetMaximumSpeedLimit(-1f, false);
-                    attacker.EnforceShieldUsage(Agent.UsageDirection.None);
-
-                    if (_isDefending.TryGetValue(attacker, out bool def) && def)
-                    {
-                        // Safely unflag so we don't spam resets if they are already free
-                        _isDefending[attacker] = false;
-                    }
+                    ClearCheerState(attacker);
                 }
             }
         }
@@ -376,7 +356,6 @@ namespace DynamicCombat
         {
             base.OnAgentDeleted(agent);
             CombatRegistry.Instance.RemoveAttacker(agent);
-            _isDefending.Remove(agent);
             _isCheering.Remove(agent);
         }
 
@@ -384,7 +363,6 @@ namespace DynamicCombat
         {
             base.OnRemoveBehavior();
             CombatRegistry.Instance.Clear();
-            _isDefending.Clear();
             _isCheering.Clear();
         }
 
@@ -392,7 +370,6 @@ namespace DynamicCombat
         {
             base.OnEndMission();
             CombatRegistry.Instance.Clear();
-            _isDefending.Clear();
             _isCheering.Clear();
         }
     }
