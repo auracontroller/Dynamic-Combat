@@ -165,6 +165,7 @@ namespace DynamicCombat
             }
 
             targetQueue.Add(attacker);
+            ModLogger.Log($"Agent {attacker.Index} registered to queue for Target {target.Index}.");
             return true;
         }
 
@@ -198,7 +199,10 @@ namespace DynamicCombat
 
             if (_activeEngagements.TryGetValue(target, out var activeList))
             {
-                activeList.Remove(attacker);
+                if (activeList.Remove(attacker))
+                {
+                    ModLogger.Log($"Agent {attacker.Index} demoted from active slot for Target {target.Index}.");
+                }
             }
 
             if (!_queuedAttackers.TryGetValue(target, out var targetQueue))
@@ -214,11 +218,13 @@ namespace DynamicCombat
                     // Target queue is full. Evict entirely. Blacklist for 2 seconds and find new target.
                     BlacklistTarget(attacker, target, currentTime, 2.0f);
                     RemoveAttacker(attacker);
+                    ModLogger.Log($"Agent {attacker.Index} evicted completely (queue full) from Target {target.Index}.");
                 }
                 else
                 {
                     targetQueue.Add(attacker);
                     ResetQueueTimer(attacker); // Start queue timer
+                    ModLogger.Log($"Agent {attacker.Index} added to queue for Target {target.Index}.");
                 }
             }
         }
@@ -231,6 +237,7 @@ namespace DynamicCombat
             foreach (var kvp in _queuedAttackers) totalQueued += kvp.Value.Count;
 
             TaleWorlds.Library.Debug.Print($"[DynamicCombat] Active Slots: {totalActive} | Queued: {totalQueued}");
+            ModLogger.Log($"[DynamicCombat] Active Slots: {totalActive} | Queued: {totalQueued}");
         }
 
         public void UpdateSlots()
@@ -323,6 +330,7 @@ namespace DynamicCombat
                     {
                         queueList.RemoveAt(candidateIndex);
                         activeList.Add(bestCandidate);
+                        ModLogger.Log($"Agent {bestCandidate.Index} promoted to ACTIVE slot for Target {target.Index}.");
                     }
                     else
                     {

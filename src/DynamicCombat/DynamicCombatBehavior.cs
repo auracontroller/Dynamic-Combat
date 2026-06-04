@@ -236,6 +236,7 @@ namespace DynamicCombat
                 {
                     attacker.SetTargetAgent(assignedTarget);
                     target = assignedTarget; // Force the override
+                    ModLogger.Log($"Agent {attacker.Index} rubber-banding fixed: forced target override to {assignedTarget.Index}.");
                 }
 
                 if (!hasActiveSlot || isBehindTarget)
@@ -339,6 +340,7 @@ namespace DynamicCombat
             {
                 agent.SetActionChannel(1, CheerActionCache, false, 0, 0, 1f, 0f, 0.5f, 0f, false, -0.2f, 0, true);
                 _isCheering[agent] = true;
+                ModLogger.Log($"Agent {agent.Index} entering Cheer state.");
             }
         }
 
@@ -349,6 +351,7 @@ namespace DynamicCombat
                 _isCheering[agent] = false;
                 // Force an action clear to snap them out of the cheer quickly
                 agent.SetActionChannel(1, ActionIndexCache.act_none, true, 0, 0, 1f, 0f, 0.5f, 0f, false, -0.2f, 0, true);
+                ModLogger.Log($"Agent {agent.Index} clearing Cheer state.");
             }
         }
 
