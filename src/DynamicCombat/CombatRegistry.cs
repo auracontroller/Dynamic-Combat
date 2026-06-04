@@ -450,6 +450,15 @@ namespace DynamicCombat
              }
         }
 
+        public IReadOnlyList<Agent> GetQueuedAttackers(Agent target)
+        {
+            if (target != null && _queuedAttackers.TryGetValue(target, out var queueList))
+            {
+                return queueList;
+            }
+            return null;
+        }
+
         // Shared utility to determine if attacker is in rear quadrant
         public static bool IsInRearQuadrant(Agent attacker, Agent target, float rearAngleDegrees)
         {

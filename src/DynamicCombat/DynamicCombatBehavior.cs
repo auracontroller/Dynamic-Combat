@@ -14,9 +14,11 @@ namespace DynamicCombat
         private const float UpdateInterval = 0.25f; // Update every 250ms to save performance
 
         private static readonly ActionIndexCache DefendActionCache = ActionIndexCache.Create("act_defend_shield_up_forward");
+        private static readonly ActionIndexCache CheerActionCache = ActionIndexCache.Create("act_arena_cheer_1");
 
         // Tracks agents currently forced into a defensive animation to prevent FMOD frame-spam leaks
         private System.Collections.Generic.Dictionary<Agent, bool> _isDefending = new System.Collections.Generic.Dictionary<Agent, bool>();
+        private System.Collections.Generic.Dictionary<Agent, bool> _isCheering = new System.Collections.Generic.Dictionary<Agent, bool>();
 
         public override void OnMissionTick(float dt)
         {
@@ -124,7 +126,7 @@ namespace DynamicCombat
                     CombatRegistry.Instance.IncrementQueueTimer(attacker, dt);
                     float queueTime = CombatRegistry.Instance.GetQueueTimer(attacker);
 
-                    if (tookDamage || queueTime > 5.0f)
+                    if (tookDamage || queueTime > 2.0f)
                     {
                         // Immediately cancel timer
                         CombatRegistry.Instance.ResetQueueTimer(attacker);
@@ -133,12 +135,30 @@ namespace DynamicCombat
                         CombatRegistry.Instance.RemoveAttacker(attacker);
 
                         // Scan for alternative
-                        Agent altTarget = CombatRegistry.Instance.FindAlternativeTarget(attacker, true);
+                        Agent altTarget = CombatRegistry.Instance.FindAlternativeTarget(attacker, true); // true = require active slot
                         if (altTarget != null)
                         {
+                            ClearCheerState(attacker);
                             attacker.SetTargetAgent(altTarget);
                             CombatRegistry.Instance.TryRegisterAttacker(attacker, altTarget);
                             target = altTarget;
+                        }
+                        else
+                        {
+                            // Try finding a target with an open queue slot as a fallback
+                            Agent altQueueTarget = CombatRegistry.Instance.FindAlternativeTarget(attacker, false);
+                            if (altQueueTarget != null)
+                            {
+                                ClearCheerState(attacker);
+                                attacker.SetTargetAgent(altQueueTarget);
+                                CombatRegistry.Instance.TryRegisterAttacker(attacker, altQueueTarget);
+                                target = altQueueTarget;
+                            }
+                            else
+                            {
+                                // No targets available at all, global slots full. Overflow to Cheer.
+                                EnterCheerState(attacker);
+                            }
                         }
                     }
                 }
@@ -171,6 +191,26 @@ namespace DynamicCombat
 
                 if (target == null || !target.IsActive() || !target.IsHuman)
                     continue;
+
+                bool isCheering = _isCheering.TryGetValue(attacker, out bool cheeringState) && cheeringState;
+
+                // Handle Cheer Interruption from Damage
+                if (isCheering)
+                {
+                    if (CombatRegistry.Instance.DidTakeDamage(attacker))
+                    {
+                        ClearCheerState(attacker);
+                        isCheering = false;
+                    }
+                    else
+                    {
+                        // Maintain cheer state, hold ground, and skip standard suppression logic
+                        attacker.SetLookAgent(null);
+                        attacker.DisableScriptedMovement();
+                        attacker.SetMaximumSpeedLimit(0f, false);
+                        continue;
+                    }
+                }
 
                 bool hasActiveSlot = CombatRegistry.Instance.HasActiveSlot(attacker, target);
                 bool isTargetSwarmed = CombatRegistry.Instance.IsTargetSwarmed(target);
@@ -214,21 +254,55 @@ namespace DynamicCombat
                         // Force agent to face the enemy when inside max radius
                         attacker.SetLookAgent(target);
 
-                        // Maintain elastic boundary inside the max radius
+                        // 1. Spatial Tolerance Zone & 2. The Queue Spacer
+                        Vec2 attackerPos2D = attacker.Position.AsVec2;
+                        Vec2 targetPos2D = target.Position.AsVec2;
+
+                        Vec2 pushForce = new Vec2(0, 0);
+
+                        // Calculate repulsion from target (maintain min distance)
                         if (distanceToTarget < minDistance)
                         {
-                            // Step back
-                            Vec2 diff = attacker.Position.AsVec2 - target.Position.AsVec2;
+                            Vec2 diff = attackerPos2D - targetPos2D;
                             Vec2 dirAway = diff.LengthSquared < 0.0001f ? new Vec2(1, 0) : diff.Normalized();
-                            Vec2 idealPos = target.Position.AsVec2 + (dirAway * minDistance);
-                            WorldPosition retreatPos = new WorldPosition(Mission.Current.Scene, UIntPtr.Zero, new Vec3(idealPos.x, idealPos.y, attacker.Position.z), false);
-                            attacker.SetScriptedPosition(ref retreatPos, false, Agent.AIScriptedFrameFlags.None);
+                            // Strong push away from target if inside minimum ring
+                            pushForce += dirAway * (minDistance - distanceToTarget);
+                        }
+
+                        // Calculate repulsion from other queued peers (Queue Spacer)
+                        var queuedPeers = CombatRegistry.Instance.GetQueuedAttackers(target);
+                        if (queuedPeers != null)
+                        {
+                            for (int j = 0; j < queuedPeers.Count; j++)
+                            {
+                                Agent peer = queuedPeers[j];
+                                if (peer == attacker || !peer.IsActive()) continue;
+
+                                float distToPeer = attacker.Position.Distance(peer.Position);
+                                if (distToPeer < 2.0f) // 2 meters spacer
+                                {
+                                    Vec2 peerDiff = attackerPos2D - peer.Position.AsVec2;
+                                    Vec2 peerDirAway = peerDiff.LengthSquared < 0.0001f ? new Vec2(1, 0) : peerDiff.Normalized();
+
+                                    // Scale push force based on how close they are
+                                    pushForce += peerDirAway * (2.0f - distToPeer);
+                                }
+                            }
+                        }
+
+                        // Apply spatial forces or hold ground
+                        if (pushForce.LengthSquared > 0.01f) // Needs to move to maintain spacing/min distance
+                        {
+                            Vec2 idealPos = attackerPos2D + pushForce;
+                            WorldPosition adjustmentPos = new WorldPosition(Mission.Current.Scene, UIntPtr.Zero, new Vec3(idealPos.x, idealPos.y, attacker.Position.z), false);
+                            attacker.SetScriptedPosition(ref adjustmentPos, false, Agent.AIScriptedFrameFlags.None);
+                            attacker.SetMaximumSpeedLimit(-1f, false); // Allow movement to the new spot
                         }
                         else
                         {
-                            // Inside the dead-zone, zero-movement. Let them stop.
+                            // Inside the safe fluid zone and properly spaced, hold ground.
                             attacker.DisableScriptedMovement();
-                            attacker.SetMaximumSpeedLimit(0f, false); // Try to force them to stop walking towards the target
+                            attacker.SetMaximumSpeedLimit(0f, false);
                         }
 
                         // Force the agent to block/defend while waiting in the queue
@@ -279,11 +353,31 @@ namespace DynamicCombat
                    item.ItemType == ItemObject.ItemTypeEnum.Thrown;
         }
 
+        private void EnterCheerState(Agent agent)
+        {
+            if (!_isCheering.TryGetValue(agent, out bool cheering) || !cheering)
+            {
+                agent.SetActionChannel(1, CheerActionCache, false, 0, 0, 1f, 0f, 0.5f, 0f, false, -0.2f, 0, true);
+                _isCheering[agent] = true;
+            }
+        }
+
+        private void ClearCheerState(Agent agent)
+        {
+            if (_isCheering.TryGetValue(agent, out bool cheering) && cheering)
+            {
+                _isCheering[agent] = false;
+                // Force an action clear to snap them out of the cheer quickly
+                agent.SetActionChannel(1, ActionIndexCache.act_none, true, 0, 0, 1f, 0f, 0.5f, 0f, false, -0.2f, 0, true);
+            }
+        }
+
         public override void OnAgentDeleted(Agent agent)
         {
             base.OnAgentDeleted(agent);
             CombatRegistry.Instance.RemoveAttacker(agent);
             _isDefending.Remove(agent);
+            _isCheering.Remove(agent);
         }
 
         public override void OnRemoveBehavior()
@@ -291,6 +385,7 @@ namespace DynamicCombat
             base.OnRemoveBehavior();
             CombatRegistry.Instance.Clear();
             _isDefending.Clear();
+            _isCheering.Clear();
         }
 
         protected override void OnEndMission()
@@ -298,6 +393,7 @@ namespace DynamicCombat
             base.OnEndMission();
             CombatRegistry.Instance.Clear();
             _isDefending.Clear();
+            _isCheering.Clear();
         }
     }
 }
