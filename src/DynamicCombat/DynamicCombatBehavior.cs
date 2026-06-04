@@ -26,14 +26,17 @@ namespace DynamicCombat
             _tickTimer += dt;
             if (_tickTimer >= UpdateInterval)
             {
+                float passedTime = _tickTimer;
                 _tickTimer = 0f;
+
                 CombatRegistry.Instance.UpdateSlots();
                 CombatRegistry.Instance.PrintTelemetry();
-            }
 
-            // Concurrency Shield: Update agent micro-management every single frame
-            // to suppress vanilla AI from bleeding through and overriding our limits.
-            UpdateAgents(dt);
+                // Reverted from Concurrency Shield to standard 250ms tick.
+                // Calling unmanaged scripting/pathing APIs (SetScriptedPosition, DisableScriptedMovement)
+                // every frame overflows the unmanaged device reference queues, causing ERC2112 on exit.
+                UpdateAgents(passedTime);
+            }
         }
 
         private void UpdateAgents(float dt)
