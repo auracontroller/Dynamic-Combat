@@ -226,7 +226,7 @@ namespace DynamicCombat
                     }
                 }
 
-                bool isCheering = _isCheering.TryGetValue(attacker, out bool cheeringState) && cheeringState;
+                isCheering = _isCheering.TryGetValue(attacker, out bool currentCheeringState) && currentCheeringState;
 
                 // Handle Cheer Interruption from Damage
                 if (isCheering)
