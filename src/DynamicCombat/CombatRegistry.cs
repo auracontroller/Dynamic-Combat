@@ -193,6 +193,48 @@ namespace DynamicCombat
             }
         }
 
+        public void PurgeAgent(Agent agent)
+        {
+            RemoveAttacker(agent);
+
+            // Thoroughly clean up all references when an agent dies or is removed
+            _activeEngagements.Remove(agent);
+            _queuedAttackers.Remove(agent);
+            _agentHealths.Remove(agent);
+            _queueTimers.Remove(agent);
+            _blacklistedTargets.Remove(agent);
+
+            // Remove this agent as a target from all other attackers' blacklists
+            var attackersToClean = new List<Agent>();
+            foreach (var kvp in _blacklistedTargets)
+            {
+                if (kvp.Value.ContainsKey(agent))
+                {
+                    attackersToClean.Add(kvp.Key);
+                }
+            }
+            foreach (var a in attackersToClean)
+            {
+                _blacklistedTargets[a].Remove(agent);
+            }
+
+            // Remove this agent as a value from _attackerCurrentTarget
+            var attackersTargetingThis = new List<Agent>();
+            foreach (var kvp in _attackerCurrentTarget)
+            {
+                if (kvp.Value == agent)
+                {
+                    attackersTargetingThis.Add(kvp.Key);
+                }
+            }
+            foreach (var a in attackersTargetingThis)
+            {
+                // We don't call RemoveAttacker here to avoid recursion, just clean the map
+                // and their specific list entries were handled when this agent was removed from _activeEngagements / _queuedAttackers above.
+                _attackerCurrentTarget.Remove(a);
+            }
+        }
+
         public void DemoteToQueue(Agent attacker, Agent target, float currentTime)
         {
             if (attacker == null || target == null) return;
