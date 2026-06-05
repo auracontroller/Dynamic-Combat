@@ -112,5 +112,55 @@ namespace DynamicCombat.Tests
             bool result = CombatRegistry.IsInRearQuadrant(attacker, target, 180f);
             Assert.True(result);
         }
+
+        [Fact]
+        public void BlacklistTarget_AddsTargetToBlacklist()
+        {
+            var registry = new CombatRegistry();
+            var attacker = new Agent { Index = 1 };
+            var target = new Agent { Index = 2 };
+
+            registry.BlacklistTarget(attacker, target, 10.0f, 5.0f);
+
+            Assert.True(registry.IsBlacklisted(attacker, target, 12.0f));
+            Assert.False(registry.IsBlacklisted(attacker, target, 16.0f));
+        }
+
+        [Fact]
+        public void BlacklistTarget_UpdatesExistingBlacklistExpiration()
+        {
+            var registry = new CombatRegistry();
+            var attacker = new Agent { Index = 1 };
+            var target = new Agent { Index = 2 };
+
+            registry.BlacklistTarget(attacker, target, 10.0f, 5.0f);
+            Assert.True(registry.IsBlacklisted(attacker, target, 12.0f));
+
+            registry.BlacklistTarget(attacker, target, 15.0f, 5.0f);
+            Assert.True(registry.IsBlacklisted(attacker, target, 18.0f));
+            Assert.False(registry.IsBlacklisted(attacker, target, 21.0f));
+        }
+
+        [Fact]
+        public void BlacklistTarget_NullAttacker_DoesNotThrow()
+        {
+            var registry = new CombatRegistry();
+            var target = new Agent { Index = 2 };
+
+            var exception = Record.Exception(() => registry.BlacklistTarget(null, target, 10.0f, 5.0f));
+            Assert.Null(exception);
+            Assert.False(registry.IsBlacklisted(null, target, 10.0f));
+        }
+
+        [Fact]
+        public void BlacklistTarget_NullTarget_DoesNotThrow()
+        {
+            var registry = new CombatRegistry();
+            var attacker = new Agent { Index = 1 };
+
+            var exception = Record.Exception(() => registry.BlacklistTarget(attacker, null, 10.0f, 5.0f));
+            Assert.Null(exception);
+            Assert.False(registry.IsBlacklisted(attacker, null, 10.0f));
+        }
     }
 }
