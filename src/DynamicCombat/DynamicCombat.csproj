@@ -8,7 +8,7 @@
     <AssemblyName>DynamicCombat</AssemblyName>
     <RootNamespace>DynamicCombat</RootNamespace>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <OutputPath>bin\Win64_Shipping_Client\</OutputPath>
+    <OutputPath>$(MSBuildProjectName)\bin\Win64_Shipping_Client\</OutputPath>
   </PropertyGroup>
 
   <ItemGroup>
