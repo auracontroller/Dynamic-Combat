@@ -421,9 +421,12 @@ namespace DynamicCombat
         {
             if (!_isCheering.TryGetValue(agent, out bool cheering) || !cheering)
             {
-                // Play on channel 0 (full body) instead of channel 1 to guarantee it overrides stance
-                agent.SetActionChannel(0, CheerActionCache, false, 0, 0, 1f, 0f, 0.5f, 0f, false, -0.2f, 0, true);
-                agent.EnforceShieldUsage(Agent.UsageDirection.None); // Ensure shield doesn't block the animation
+                if (agent.IsActive())
+                {
+                    // Play on channel 0 (full body) instead of channel 1 to guarantee it overrides stance
+                    agent.SetActionChannel(0, CheerActionCache, false, 0, 0, 1f, 0f, 0.5f, 0f, false, -0.2f, 0, true);
+                    agent.EnforceShieldUsage(Agent.UsageDirection.None); // Ensure shield doesn't block the animation
+                }
                 _isCheering[agent] = true;
                 ModLogger.Log($"Agent {agent.Index} entering Cheer state.");
             }
@@ -434,8 +437,11 @@ namespace DynamicCombat
             if (_isCheering.TryGetValue(agent, out bool cheering) && cheering)
             {
                 _isCheering[agent] = false;
-                // Force an action clear to snap them out of the cheer quickly
-                agent.SetActionChannel(0, ActionIndexCache.act_none, true, 0, 0, 1f, 0f, 0.5f, 0f, false, -0.2f, 0, true);
+                if (agent.IsActive())
+                {
+                    // Force an action clear to snap them out of the cheer quickly
+                    agent.SetActionChannel(0, ActionIndexCache.act_none, true, 0, 0, 1f, 0f, 0.5f, 0f, false, -0.2f, 0, true);
+                }
                 ModLogger.Log($"Agent {agent.Index} clearing Cheer state.");
             }
         }
@@ -443,9 +449,23 @@ namespace DynamicCombat
         public override void OnAgentDeleted(Agent agent)
         {
             base.OnAgentDeleted(agent);
-            CombatRegistry.Instance.RemoveAttacker(agent);
+            CombatRegistry.Instance.PurgeAgent(agent);
             _isCheering.Remove(agent);
             _lastLoggedOverride.Remove(agent);
+
+            // Clean up any references where this agent was the target in the log tracker
+            var keysToRemove = new System.Collections.Generic.List<Agent>();
+            foreach (var kvp in _lastLoggedOverride)
+            {
+                if (kvp.Value == agent)
+                {
+                    keysToRemove.Add(kvp.Key);
+                }
+            }
+            foreach (var key in keysToRemove)
+            {
+                _lastLoggedOverride.Remove(key);
+            }
         }
 
         public override void OnRemoveBehavior()
