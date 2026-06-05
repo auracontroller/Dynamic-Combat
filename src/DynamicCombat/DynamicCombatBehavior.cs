@@ -332,9 +332,10 @@ namespace DynamicCombat
                                     Agent peer = queuedPeers[j];
                                     if (peer == attacker || !peer.IsActive()) continue;
 
-                                    float distToPeer = attacker.Position.Distance(peer.Position);
-                                    if (distToPeer < 2.0f) // 2 meters spacer
+                                    float distToPeerSq = attacker.Position.DistanceSquared(peer.Position);
+                                    if (distToPeerSq < 4.0f) // 2 meters spacer squared
                                     {
+                                        float distToPeer = (float)Math.Sqrt(distToPeerSq);
                                         Vec2 peerDiff = attackerPos2D - peer.Position.AsVec2;
                                         Vec2 peerDirAway = peerDiff.LengthSquared < 0.0001f ? new Vec2(1, 0) : peerDiff.Normalized();
                                         // Scale push force based on how close they are
