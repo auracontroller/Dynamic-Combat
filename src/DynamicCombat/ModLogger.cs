@@ -17,9 +17,10 @@ namespace DynamicCombat
                 string assemblyFolder = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
                 LogFilePath = Path.Combine(assemblyFolder, "DynamicCombat_DebugLog.txt");
             }
-            catch
+            catch (Exception ex)
             {
                 LogFilePath = "DynamicCombat_DebugLog.txt";
+                System.Diagnostics.Debug.WriteLine($"[DynamicCombat] Failed to get assembly path for logging: {ex}");
             }
         }
 
@@ -40,9 +41,10 @@ namespace DynamicCombat
                     File.AppendAllText(LogFilePath, formattedMessage);
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // Ignore logging errors to prevent crashing the game
+                // Log the exception to Debug instead of silently swallowing it, preventing silent crashes and security risks
+                System.Diagnostics.Debug.WriteLine($"[DynamicCombat] Logging failed: {ex}");
             }
         }
     }
