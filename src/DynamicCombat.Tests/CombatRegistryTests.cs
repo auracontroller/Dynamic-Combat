@@ -162,5 +162,81 @@ namespace DynamicCombat.Tests
             Assert.Null(exception);
             Assert.False(registry.IsBlacklisted(attacker, null, 10.0f));
         }
+
+        [Fact]
+        public void IsBlacklisted_NullAttacker_ReturnsFalse()
+        {
+            var registry = new CombatRegistry();
+            var target = new Agent { Index = 2 };
+
+            bool result = registry.IsBlacklisted(null, target, 10.0f);
+            Assert.False(result);
+        }
+
+        [Fact]
+        public void IsBlacklisted_NullTarget_ReturnsFalse()
+        {
+            var registry = new CombatRegistry();
+            var attacker = new Agent { Index = 1 };
+
+            bool result = registry.IsBlacklisted(attacker, null, 10.0f);
+            Assert.False(result);
+        }
+
+        [Fact]
+        public void IsBlacklisted_AttackerNotInBlacklist_ReturnsFalse()
+        {
+            var registry = new CombatRegistry();
+            var attacker = new Agent { Index = 1 };
+            var target = new Agent { Index = 2 };
+
+            bool result = registry.IsBlacklisted(attacker, target, 10.0f);
+            Assert.False(result);
+        }
+
+        [Fact]
+        public void IsBlacklisted_TargetNotInAttackerBlacklist_ReturnsFalse()
+        {
+            var registry = new CombatRegistry();
+            var attacker = new Agent { Index = 1 };
+            var target1 = new Agent { Index = 2 };
+            var target2 = new Agent { Index = 3 };
+
+            registry.BlacklistTarget(attacker, target1, 10.0f, 5.0f);
+
+            bool result = registry.IsBlacklisted(attacker, target2, 12.0f);
+            Assert.False(result);
+        }
+
+        [Fact]
+        public void IsBlacklisted_BeforeExpiration_ReturnsTrue()
+        {
+            var registry = new CombatRegistry();
+            var attacker = new Agent { Index = 1 };
+            var target = new Agent { Index = 2 };
+
+            registry.BlacklistTarget(attacker, target, 10.0f, 5.0f); // Expires at 15.0
+
+            bool result = registry.IsBlacklisted(attacker, target, 14.9f);
+            Assert.True(result);
+        }
+
+        [Fact]
+        public void IsBlacklisted_AtOrAfterExpiration_ReturnsFalseAndRemovesFromBlacklist()
+        {
+            var registry = new CombatRegistry();
+            var attacker = new Agent { Index = 1 };
+            var target = new Agent { Index = 2 };
+
+            registry.BlacklistTarget(attacker, target, 10.0f, 5.0f); // Expires at 15.0
+
+            // Test exactly at expiration
+            bool resultAt = registry.IsBlacklisted(attacker, target, 15.0f);
+            Assert.False(resultAt);
+
+            // Test after expiration (should have been removed by previous call)
+            bool resultAfter = registry.IsBlacklisted(attacker, target, 16.0f);
+            Assert.False(resultAfter);
+        }
     }
 }
