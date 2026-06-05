@@ -24,5 +24,8 @@
     </SubModule>
   </SubModules>
   <Xmls>
+    <XmlNode>
+      <XmlName id="ActionSets" path="custom_actions"/>
+    </XmlNode>
   </Xmls>
 </Module>

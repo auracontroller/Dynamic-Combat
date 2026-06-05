@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ActionSets>
+  <ActionSet id="custom_action_set">
+    <action id="act_command_view_cheer" name="cheer_placeholder">
+      <clip name="stand_idle_1" />
+    </action>
+  </ActionSet>
+</ActionSets>
