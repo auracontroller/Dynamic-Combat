@@ -5,11 +5,6 @@ namespace DynamicCombat
 {
     public class SubModule : MBSubModuleBase
     {
-        protected override void OnSubModuleLoad()
-        {
-            base.OnSubModuleLoad();
-        }
-
         public override void OnMissionBehaviorInitialize(Mission mission)
         {
             base.OnMissionBehaviorInitialize(mission);
