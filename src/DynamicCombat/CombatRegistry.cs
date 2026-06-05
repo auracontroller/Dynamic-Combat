@@ -318,13 +318,15 @@ namespace DynamicCombat
             int maxQueue = settings.MaxQueueSlots;
             float currentTime = Mission.Current.CurrentTime;
 
-            // Pre-allocate list to avoid garbage collection hit every 250ms
-            List<Agent> targetsToProcess = new List<Agent>(_activeEngagements.Keys);
+            // Use HashSet to avoid O(N^2) scaling when checking for duplicates
+            HashSet<Agent> targetsToProcessSet = new HashSet<Agent>(_activeEngagements.Keys);
             foreach(var t in _queuedAttackers.Keys)
             {
-                if (!targetsToProcess.Contains(t))
-                    targetsToProcess.Add(t);
+                targetsToProcessSet.Add(t); // HashSet handles duplicates automatically and is O(1)
             }
+
+            // Convert to list for iteration
+            List<Agent> targetsToProcess = new List<Agent>(targetsToProcessSet);
 
             // Iterate backwards to allow removal
             for (int i = targetsToProcess.Count - 1; i >= 0; i--)

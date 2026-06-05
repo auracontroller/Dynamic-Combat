@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8' />
+<title>DynamicCombat.Benchmarks.UpdateTargetsBenchmark-20260605-031029</title>
+
+<style type="text/css">
+	table { border-collapse: collapse; display: block; width: 100%; overflow: auto; }
+	td, th { padding: 6px 13px; border: 1px solid #ddd; text-align: right; }
+	tr { background-color: #fff; border-top: 1px solid #ccc; }
+	tr:nth-child(even) { background: #f8f8f8; }
+</style>
+</head>
+<body>
+<pre><code>
+BenchmarkDotNet v0.13.12, Ubuntu 24.04.4 LTS (Noble Numbat)
+Intel Xeon Processor 2.30GHz, 1 CPU, 4 logical and 4 physical cores
+.NET SDK 10.0.103
+  [Host]     : .NET 8.0.24 (8.0.2426.7010), X64 RyuJIT AVX2
+  DefaultJob : .NET 8.0.24 (8.0.2426.7010), X64 RyuJIT AVX2
+</code></pre>
+<pre><code></code></pre>
+
+<table>
+<thead><tr><th>Method     </th><th>NumberOfAgents</th><th>Mean  </th><th>Error</th><th>StdDev</th><th>Ratio</th><th>Gen0</th><th>Gen1</th><th>Allocated</th><th>Alloc Ratio</th>
+</tr>
+</thead><tbody><tr><td>Baseline_List</td><td>10</td><td>514.5 ns</td><td>1.52 ns</td><td>1.42 ns</td><td>1.00</td><td>0.0134</td><td>-</td><td>320 B</td><td>1.00</td>
+</tr><tr><td>Optimized_HashSet</td><td>10</td><td>896.6 ns</td><td>2.52 ns</td><td>2.36 ns</td><td>1.74</td><td>0.0372</td><td>-</td><td>888 B</td><td>2.77</td>
+</tr><tr><td>Baseline_List</td><td>50</td><td>7,007.9 ns</td><td>10.93 ns</td><td>9.69 ns</td><td>1.00</td><td>0.0534</td><td>-</td><td>1280 B</td><td>1.00</td>
+</tr><tr><td>Optimized_HashSet</td><td>50</td><td>4,186.6 ns</td><td>15.28 ns</td><td>14.30 ns</td><td>0.60</td><td>0.1678</td><td>-</td><td>4008 B</td><td>3.13</td>
+</tr><tr><td>Baseline_List</td><td>100</td><td>21,014.3 ns</td><td>72.96 ns</td><td>64.68 ns</td><td>1.00</td><td>0.0916</td><td>-</td><td>2480 B</td><td>1.00</td>
+</tr><tr><td>Optimized_HashSet</td><td>100</td><td>8,405.5 ns</td><td>48.12 ns</td><td>45.01 ns</td><td>0.40</td><td>0.2899</td><td>-</td><td>7128 B</td><td>2.87</td>
+</tr><tr><td>Baseline_List</td><td>500</td><td>529,251.3 ns</td><td>1,208.85 ns</td><td>1,071.61 ns</td><td>1.00</td><td>-</td><td>-</td><td>12081 B</td><td>1.00</td>
+</tr><tr><td>Optimized_HashSet</td><td>500</td><td>45,354.7 ns</td><td>117.90 ns</td><td>104.52 ns</td><td>0.09</td><td>1.3428</td><td>0.1221</td><td>32688 B</td><td>2.71</td>
+</tr></tbody></table>
+</body>
+</html>
