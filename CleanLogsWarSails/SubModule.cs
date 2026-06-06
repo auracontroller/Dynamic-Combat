@@ -60,7 +60,7 @@ namespace CleanLogsWarSails
                 {
                     if (!_hasLoggedSilence)
                     {
-                        TaleWorlds.Library.Debug.PrintLine("[CleanLogs] Module 'War Sails' not found. Safely blocking asset load requests to prevent log flooding.", Debug.DebugColor.Yellow);
+                        TaleWorlds.Library.Debug.Print("[CleanLogs] Module 'War Sails' not found. Safely blocking asset load requests to prevent log flooding.", 0, TaleWorlds.Library.Debug.DebugColor.Yellow);
                         _hasLoggedSilence = true;
                     }
 
