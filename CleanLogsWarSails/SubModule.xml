@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Module>
+    <Name value="Clean Logs: War Sails" />
+    <Id value="CleanLogsWarSails" />
+    <Version value="v1.0.0" />
+    <SingleplayerModule value="true" />
+    <MultiplayerModule value="false" />
+    <DependedModules>
+        <DependedModule Id="Native" />
+        <DependedModule Id="SandBoxCore" />
+        <DependedModule Id="Sandbox" />
+        <DependedModule Id="StoryMode" />
+        <DependedModule Id="CustomBattle" />
+    </DependedModules>
+    <SubModules>
+        <SubModule>
+            <Name value="CleanLogsWarSails" />
+            <DLLName value="CleanLogsWarSails.dll" />
+            <SubModuleClassType value="CleanLogsWarSails.SubModule" />
+            <Tags>
+                <Tag key="StrictPlayMode" value="Singleplayer" />
+            </Tags>
+        </SubModule>
+    </SubModules>
+</Module>
