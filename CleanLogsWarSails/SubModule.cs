@@ -11,9 +11,9 @@ namespace CleanLogsWarSails
         private static bool _isWarSailsMissing = false;
         private static bool _hasLoggedSilence = false;
 
-        protected override void OnSubModuleStart()
+        protected override void OnSubModuleLoad()
         {
-            base.OnSubModuleStart();
+            base.OnSubModuleLoad();
 
             bool dlcActive = false;
 
