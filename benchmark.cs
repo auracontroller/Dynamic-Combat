@@ -28,26 +28,28 @@ public class Benchmark
     public static void Main()
     {
         int numAgents = 1000;
-        Vec3[] positions = new Vec3[numAgents];
+        Vec3[] attackers = new Vec3[numAgents];
+        Vec3[] targets = new Vec3[numAgents];
         Random rand = new Random(42);
         for(int i=0; i<numAgents; i++)
         {
-            positions[i] = new Vec3((float)rand.NextDouble() * 100f, (float)rand.NextDouble() * 100f, 0f);
+            attackers[i] = new Vec3((float)rand.NextDouble() * 100f, (float)rand.NextDouble() * 100f, 0f);
+            targets[i] = new Vec3((float)rand.NextDouble() * 100f, (float)rand.NextDouble() * 100f, 0f);
         }
 
-        int iterations = 1000; // Simulate 1000 frames
+        int iterations = 100000; // Simulate 100000 frames
 
         // Warmup
-        RunOriginal(positions, 10);
-        RunOptimized(positions, 10);
+        RunOriginal(attackers, targets, 1000, 10f);
+        RunOptimized(attackers, targets, 1000, 10f);
 
         Stopwatch sw = Stopwatch.StartNew();
-        long unoptimizedResult = RunOriginal(positions, iterations);
+        long unoptimizedResult = RunOriginal(attackers, targets, iterations, 10f);
         sw.Stop();
         long unoptimizedTime = sw.ElapsedMilliseconds;
 
         sw.Restart();
-        long optimizedResult = RunOptimized(positions, iterations);
+        long optimizedResult = RunOptimized(attackers, targets, iterations, 10f);
         sw.Stop();
         long optimizedTime = sw.ElapsedMilliseconds;
 
@@ -55,57 +57,46 @@ public class Benchmark
         Console.WriteLine($"Optimized time:   {optimizedTime} ms");
         Console.WriteLine($"Improvement:      {((unoptimizedTime - optimizedTime) / (double)unoptimizedTime * 100):F2}%");
 
-        // Ensure the compiler doesn't optimize away the loop
         if(unoptimizedResult != optimizedResult) {
             Console.WriteLine("Mismatch in results!");
         }
     }
 
-    static long RunOriginal(Vec3[] positions, int iterations)
+    static long RunOriginal(Vec3[] attackers, Vec3[] targets, int iterations, float maxDistance)
     {
         long dummy = 0;
         for(int frame = 0; frame < iterations; frame++)
         {
-            for(int i = 0; i < positions.Length; i++)
+            for(int i = 0; i < attackers.Length; i++)
             {
-                Vec3 attacker = positions[i];
-                for(int j = 0; j < positions.Length; j++)
-                {
-                    if (i == j) continue;
-                    Vec3 peer = positions[j];
+                Vec3 attacker = attackers[i];
+                Vec3 target = targets[i];
 
-                    float distToPeer = attacker.Distance(peer);
-                    if (distToPeer < 2.0f)
-                    {
-                        dummy += 1;
-                        // pushForce += ...
-                    }
+                float distanceToTarget = attacker.Distance(target);
+                if (distanceToTarget > maxDistance)
+                {
+                    dummy += 1;
                 }
             }
         }
         return dummy;
     }
 
-    static long RunOptimized(Vec3[] positions, int iterations)
+    static long RunOptimized(Vec3[] attackers, Vec3[] targets, int iterations, float maxDistance)
     {
         long dummy = 0;
+        float maxDistanceSq = maxDistance * maxDistance;
         for(int frame = 0; frame < iterations; frame++)
         {
-            for(int i = 0; i < positions.Length; i++)
+            for(int i = 0; i < attackers.Length; i++)
             {
-                Vec3 attacker = positions[i];
-                for(int j = 0; j < positions.Length; j++)
-                {
-                    if (i == j) continue;
-                    Vec3 peer = positions[j];
+                Vec3 attacker = attackers[i];
+                Vec3 target = targets[i];
 
-                    float distToPeerSq = attacker.DistanceSquared(peer);
-                    if (distToPeerSq < 4.0f)
-                    {
-                        float distToPeer = (float)Math.Sqrt(distToPeerSq);
-                        dummy += 1;
-                        // pushForce += ...
-                    }
+                float distanceToTargetSq = attacker.DistanceSquared(target);
+                if (distanceToTargetSq > maxDistanceSq)
+                {
+                    dummy += 1;
                 }
             }
         }
