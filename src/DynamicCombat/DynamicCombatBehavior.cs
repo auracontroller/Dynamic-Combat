@@ -107,7 +107,7 @@ namespace DynamicCombat
                 }
 
                 bool hasActiveSlot = CombatRegistry.Instance.HasActiveSlot(attacker, target);
-                float distanceToTarget = attacker.Position.Distance(target.Position);
+                float distanceToTargetSq = attacker.Position.DistanceSquared(target.Position);
 
                 // Rear-Quadrant Truncation
                 bool isBehindTarget = CombatRegistry.IsInRearQuadrant(attacker, target, rearAngle);
@@ -121,7 +121,8 @@ namespace DynamicCombat
                 // Active Attacker Priority vs. Spatial Eviction
                 if (hasActiveSlot)
                 {
-                    if (distanceToTarget > minDistance + 2.0f) // If they drift too far outside striking circle
+                    float evictionThreshold = minDistance + 2.0f;
+                    if (distanceToTargetSq > evictionThreshold * evictionThreshold) // If they drift too far outside striking circle
                     {
                         // Spatial Eviction & Demotion
                         CombatRegistry.Instance.RemoveActiveSlot(attacker, target);
@@ -242,7 +243,7 @@ namespace DynamicCombat
                 bool isTargetSwarmed = CombatRegistry.Instance.IsTargetSwarmed(target);
                 bool isBehindTarget = CombatRegistry.IsInRearQuadrant(attacker, target, rearAngle);
 
-                float distanceToTarget = attacker.Position.Distance(target.Position);
+                float distanceToTargetSq = attacker.Position.DistanceSquared(target.Position);
 
                 // Handle Cavalry
                 if (attacker.HasMount)
@@ -294,7 +295,7 @@ namespace DynamicCombat
                 {
                     // Passive Containment Override
                     // If the attacker is outside the maximum distance, do not micromanage them.
-                    if (distanceToTarget > maxDistance)
+                    if (distanceToTargetSq > maxDistance * maxDistance)
                     {
                         attacker.DisableScriptedMovement();
                         attacker.SetMaximumSpeedLimit(-1f, false);
